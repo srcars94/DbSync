@@ -1,5 +1,6 @@
 using System;
 using System.Data.SqlClient;
+using System.Diagnostics;
 using System.IO;
 using Microsoft.SqlServer.Dac;
 
@@ -12,81 +13,86 @@ namespace DbSyncTool
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string sqlProjName = "YourDatabaseProject";
             string dbName = "YourLocalDb";
+            string sqlProjPath = Path.Combine(baseDir, sqlProjName, $"{sqlProjName}.sqlproj");
             string dacpacPath = Path.Combine(baseDir, sqlProjName, "bin", "Debug", $"{sqlProjName}.dacpac");
+            string localDataScriptPath = Path.Combine(baseDir, "LocalDataSync.sql");
             string connectionString = $"Server=localhost;Database={dbName};Trusted_Connection=True;";
             string logPath = Path.Combine(baseDir, "logs", $"deploy-{dbName}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-            string localDataScriptPath = Path.Combine(baseDir, "LocalDataSync.sql");
 
             Directory.CreateDirectory(Path.GetDirectoryName(logPath));
-            Log(logPath, $"Starting sync to {dbName}");
+            Log(logPath, $"=== Starting local DB sync for {dbName} ===");
+
+            // === Step 1: Build .sqlproj with MSBuild.exe ===
+            string msbuildPath = @"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe";
+            Log(logPath, $"Building DACPAC from: {sqlProjPath}");
+
+            var build = new Process();
+            build.StartInfo.FileName = msbuildPath;
+            build.StartInfo.Arguments = $"\"{sqlProjPath}\" /p:Configuration=Debug";
+            build.StartInfo.RedirectStandardOutput = true;
+            build.StartInfo.RedirectStandardError = true;
+            build.StartInfo.UseShellExecute = false;
+            build.StartInfo.CreateNoWindow = true;
+
+            build.OutputDataReceived += (s, e) => Log(logPath, e.Data);
+            build.ErrorDataReceived += (s, e) => Log(logPath, $"ERROR: {e.Data}");
+
+            build.Start();
+            build.BeginOutputReadLine();
+            build.BeginErrorReadLine();
+            build.WaitForExit();
 
             if (!File.Exists(dacpacPath))
             {
-                Log(logPath, $"ERROR: DACPAC not found at {dacpacPath}");
+                Log(logPath, $"ERROR: Build failed. DACPAC not found at: {dacpacPath}");
                 return;
             }
 
-            try
+            // === Step 2: Deploy the DACPAC ===
+            Log(logPath, "Deploying DACPAC to local DB...");
+            var dacServices = new DacServices(connectionString);
+            dacServices.Message += (s, e) => Log(logPath, e.Message);
+
+            var options = new DacDeployOptions
             {
-                var dacServices = new DacServices(connectionString);
-                dacServices.Message += (s, e) => Log(logPath, e.Message);
+                BlockOnPossibleDataLoss = false,
+                DropObjectsNotInSource = false,
+                IgnorePermissions = true,
+                IgnoreRoleMembership = true
+            };
 
-                var options = new DacDeployOptions
+            // Add SQLCMD variables if needed
+            options.SqlCommandVariableValues["BusinessPortalsAcceptence"] = "BusinessPortalsAcceptence";
+            options.SqlCommandVariableValues["SharedDb"] = "SharedDb";
+
+            var dacpac = DacPackage.Load(dacpacPath);
+            dacServices.Deploy(dacpac, dbName, true, options);
+            Log(logPath, "DACPAC deployment complete.");
+
+            // === Step 3: Run local data script if applicable ===
+            if ((dbName.ToLower().Contains("local") || dbName.ToLower().Contains("dev")) && File.Exists(localDataScriptPath))
+            {
+                Log(logPath, "Running LocalDataSync.sql...");
+                string sql = File.ReadAllText(localDataScriptPath);
+                using (var conn = new SqlConnection(connectionString))
+                using (var cmd = new SqlCommand(sql, conn))
                 {
-                    BlockOnPossibleDataLoss = false,
-                    DropObjectsNotInSource = false,
-                    IgnorePermissions = true,
-                    IgnoreRoleMembership = true
-                };
-
-                // Set SQLCMD variables (these match what's referenced in the .sqlproj)
-                DacDeployOptions deployOptions = new DacDeployOptions();
-                var sqlCmdVars = new Dictionary<string, string>
-                {
-                    { "BusinessPortalsAcceptence", "BusinessPortalsAcceptence" },
-                    { "SharedDb", "SharedDb" }
-                };
-
-                Log(logPath, "Deploying DACPAC...");
-                var dacpac = DacPackage.Load(dacpacPath);
-                dacServices.Deploy(dacpac, dbName, true, options, sqlCmdVars);
-                Log(logPath, "Deployment complete.");
-
-                // Optional: Dev-only data script
-                if (dbName.ToLower().Contains("local") || dbName.ToLower().Contains("dev"))
-                {
-                    if (File.Exists(localDataScriptPath))
-                    {
-                        Log(logPath, "Running LocalDataSync.sql...");
-                        string sql = File.ReadAllText(localDataScriptPath);
-                        using (var conn = new SqlConnection(connectionString))
-                        using (var cmd = new SqlCommand(sql, conn))
-                        {
-                            conn.Open();
-                            cmd.ExecuteNonQuery();
-                        }
-                        Log(logPath, "Local data sync complete.");
-                    }
-                    else
-                    {
-                        Log(logPath, "LocalDataSync.sql not found. Skipping.");
-                    }
+                    conn.Open();
+                    cmd.ExecuteNonQuery();
                 }
-                else
-                {
-                    Log(logPath, $"Skipping local data sync (dbName = {dbName})");
-                }
+                Log(logPath, "Local data sync complete.");
             }
-            catch (Exception ex)
+            else
             {
-                Log(logPath, $"ERROR: {ex.Message}");
+                Log(logPath, "No local data sync performed.");
             }
 
-            Log(logPath, "Sync completed.");
+            Log(logPath, "=== Local DB sync complete ===");
         }
 
         static void Log(string path, string message)
         {
+            if (string.IsNullOrWhiteSpace(message)) return;
             string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
             Console.WriteLine(entry);
             File.AppendAllText(path, entry + Environment.NewLine);
