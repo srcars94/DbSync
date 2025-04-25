@@ -1,0 +1,45 @@
+# =========================================
+# Simple DB Sync Script
+# Builds and deploys .dacpac (no logging, no local data)
+# =========================================
+
+# === CONFIGURATION ===
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$sqlProjName = "YourDatabaseProject"
+$dbName = "YourLocalDb"
+
+$sqlProjPath = "$scriptDir\$sqlProjName\$sqlProjName.sqlproj"
+$dacpacPath = "$scriptDir\$sqlProjName\bin\Debug\$sqlProjName.dacpac"
+$connectionString = "Server=localhost;Database=$dbName;Trusted_Connection=True;"
+
+# Path to MSBuild and SqlPackage (adjust if needed)
+$msbuildPath = "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+$sqlPackagePath = "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe"
+
+# SQLCMD variables
+$sqlCmdVars = @(
+    "/v:BusinessPortalsAcceptence=BusinessPortalsAcceptence",
+    "/v:SharedDb=SharedDb"
+)
+
+# === BUILD PROJECT ===
+Write-Host "Building $sqlProjName..."
+& "$msbuildPath" "$sqlProjPath" /p:Configuration=Debug
+
+if (!(Test-Path $dacpacPath)) {
+    Write-Host "ERROR: DACPAC not found at $dacpacPath"
+    exit 1
+}
+
+# === DEPLOY DACPAC ===
+Write-Host "Deploying DACPAC to $dbName..."
+& "$sqlPackagePath" /Action:Publish `
+    /SourceFile:"$dacpacPath" `
+    /TargetConnectionString:"$connectionString" `
+    @sqlCmdVars `
+    /p:BlockOnPossibleDataLoss=false `
+    /p:DropObjectsNotInSource=false `
+    /p:IgnorePermissions=true `
+    /p:IgnoreRoleMembership=true
+
+Write-Host "Sync complete."
