@@ -1,0 +1,145 @@
+Absolutely — here’s your .NET Framework 4.7.2 console app version of your full sync tool. It mirrors the PowerShell script, but now in structured, typed, reusable C# code:
+
+
+---
+
+1. Install Required NuGet Package
+
+In your console project:
+
+Install-Package Microsoft.SqlServer.DacFx.x64
+
+
+---
+
+2. Full Program.cs
+
+using System;
+using System.Data.SqlClient;
+using System.IO;
+using Microsoft.SqlServer.Dac;
+
+namespace DbSyncTool
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string sqlProjName = "YourDatabaseProject";
+            string dbName = "YourLocalDb";
+            string dacpacPath = Path.Combine(baseDir, sqlProjName, "bin", "Debug", $"{sqlProjName}.dacpac");
+            string connectionString = $"Server=localhost;Database={dbName};Trusted_Connection=True;";
+            string logPath = Path.Combine(baseDir, "logs", $"deploy-{dbName}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            string localDataScriptPath = Path.Combine(baseDir, "LocalDataSync.sql");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath));
+            Log(logPath, $"Starting sync to {dbName}");
+
+            if (!File.Exists(dacpacPath))
+            {
+                Log(logPath, $"ERROR: DACPAC not found at {dacpacPath}");
+                return;
+            }
+
+            try
+            {
+                var dacServices = new DacServices(connectionString);
+                dacServices.Message += (s, e) => Log(logPath, e.Message);
+
+                var options = new DacDeployOptions
+                {
+                    BlockOnPossibleDataLoss = false,
+                    DropObjectsNotInSource = false,
+                    IgnorePermissions = true,
+                    IgnoreRoleMembership = true
+                };
+
+                var sqlCmdVariables = new DacVariable[]
+                {
+                    new DacVariable("BusinessPortalsAcceptence", "BusinessPortalsAcceptence"),
+                    new DacVariable("SharedDb", "SharedDb")
+                };
+
+                Log(logPath, "Deploying DACPAC...");
+                var package = DacPackage.Load(dacpacPath);
+                dacServices.Deploy(package, dbName, upgradeExisting: true, options, sqlCmdVariables);
+                Log(logPath, "Deployment complete.");
+
+                // Optional local-only data sync
+                if (dbName.ToLower().Contains("local") || dbName.ToLower().Contains("dev"))
+                {
+                    if (File.Exists(localDataScriptPath))
+                    {
+                        Log(logPath, "Running LocalDataSync.sql...");
+                        string sql = File.ReadAllText(localDataScriptPath);
+                        using (var conn = new SqlConnection(connectionString))
+                        using (var cmd = new SqlCommand(sql, conn))
+                        {
+                            conn.Open();
+                            cmd.ExecuteNonQuery();
+                        }
+                        Log(logPath, "Local data sync complete.");
+                    }
+                    else
+                    {
+                        Log(logPath, "LocalDataSync.sql not found. Skipping.");
+                    }
+                }
+                else
+                {
+                    Log(logPath, $"Skipping local data sync (dbName = {dbName})");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(logPath, $"ERROR: {ex.Message}");
+            }
+
+            Log(logPath, "Sync completed.");
+        }
+
+        static void Log(string path, string message)
+        {
+            string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
+            Console.WriteLine(entry);
+            File.AppendAllText(path, entry + Environment.NewLine);
+        }
+
+        class DacVariable : DacDeployVariable
+        {
+            public DacVariable(string name, string value) : base(name, value) { }
+        }
+    }
+}
+
+
+---
+
+Folder Structure
+
+/DbSyncTool/
+├─ Program.cs
+├─ LocalDataSync.sql
+├─ logs/
+└─ /YourDatabaseProject/
+   ├─ YourDatabaseProject.sqlproj
+   └─ bin/Debug/YourDatabaseProject.dacpac
+
+
+---
+
+To Run
+
+1. Build your .sqlproj using MSBuild (or Rider if supported).
+
+
+2. Run this console app — it deploys the DACPAC, then runs LocalDataSync.sql if it's a local/dev DB.
+
+
+
+
+---
+
+Would you like me to include a step to automatically build the .sqlproj from inside the console app too?
+
