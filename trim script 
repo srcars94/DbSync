@@ -1,42 +1,93 @@
-var originalLines = File.ReadAllLines(@"C:\path\to\deploy.sql");
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Data.SqlClient; // If you use Microsoft.Data.SqlClient, change this
 
-// Extract variable values from :setvar lines
-var variableMap = new Dictionary<string, string>();
-
-foreach (var line in originalLines)
+namespace DacpacDeploy
 {
-    if (line.TrimStart().StartsWith(":setvar"))
+    public static class DacpacScriptProcessor
     {
-        var parts = line.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 3)
+        public static void DeployScript(string scriptPath, string connectionString)
         {
-            var varName = parts[1].Trim();
-            var varValue = parts[2].Trim().Trim('"'); // Remove quotes
-            variableMap[varName] = varValue;
+            if (!File.Exists(scriptPath))
+            {
+                throw new FileNotFoundException("Script file not found.", scriptPath);
+            }
+
+            // Step 1: Read all lines
+            string[] originalLines = File.ReadAllLines(scriptPath);
+
+            // Step 2: Extract :setvar variables
+            Dictionary<string, string> variables = ExtractVariables(originalLines);
+
+            // Step 3: Clean script and replace variables
+            string cleanedScript = CleanAndReplaceVariables(originalLines, variables);
+
+            // Step 4: Execute script
+            ExecuteScript(cleanedScript, connectionString);
+        }
+
+        private static Dictionary<string, string> ExtractVariables(string[] lines)
+        {
+            Dictionary<string, string> variableMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string line in lines)
+            {
+                if (line.TrimStart().StartsWith(":setvar", StringComparison.OrdinalIgnoreCase))
+                {
+                    string[] parts = line.Split(new[] { ' ' }, 3, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length == 3)
+                    {
+                        string variableName = parts[1].Trim();
+                        string variableValue = parts[2].Trim().Trim('"');
+                        variableMap[variableName] = variableValue;
+                    }
+                }
+            }
+
+            return variableMap;
+        }
+
+        private static string CleanAndReplaceVariables(string[] lines, Dictionary<string, string> variables)
+        {
+            StringBuilder builder = new StringBuilder();
+
+            foreach (string line in lines)
+            {
+                if (line.TrimStart().StartsWith(":setvar", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Skip :setvar lines
+                    continue;
+                }
+
+                string modifiedLine = line;
+                foreach (KeyValuePair<string, string> variable in variables)
+                {
+                    string placeholder = "$(" + variable.Key + ")";
+                    modifiedLine = modifiedLine.Replace(placeholder, variable.Value);
+                }
+
+                builder.AppendLine(modifiedLine);
+            }
+
+            return builder.ToString();
+        }
+
+        private static void ExecuteScript(string scriptText, string connectionString)
+        {
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+
+                using (SqlCommand command = connection.CreateCommand())
+                {
+                    command.CommandTimeout = 600; // Optional: set timeout
+                    command.CommandText = scriptText;
+                    command.ExecuteNonQuery();
+                }
+            }
         }
     }
 }
-
-// Remove :setvar lines and replace variables
-var cleanedScript = new List<string>();
-
-foreach (var line in originalLines)
-{
-    if (line.TrimStart().StartsWith(":setvar"))
-    {
-        continue; // skip
-    }
-
-    var modifiedLine = line;
-
-    // Replace all variable usages like $(DatabaseName)
-    foreach (var (varName, varValue) in variableMap)
-    {
-        modifiedLine = modifiedLine.Replace($"$({varName})", varValue);
-    }
-
-    cleanedScript.Add(modifiedLine);
-}
-
-// Write cleaned script back
-File.WriteAllLines(@"C:\path\to\deploy-cleaned.sql", cleanedScript);
