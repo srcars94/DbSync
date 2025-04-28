@@ -1,0 +1,42 @@
+var originalLines = File.ReadAllLines(@"C:\path\to\deploy.sql");
+
+// Extract variable values from :setvar lines
+var variableMap = new Dictionary<string, string>();
+
+foreach (var line in originalLines)
+{
+    if (line.TrimStart().StartsWith(":setvar"))
+    {
+        var parts = line.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 3)
+        {
+            var varName = parts[1].Trim();
+            var varValue = parts[2].Trim().Trim('"'); // Remove quotes
+            variableMap[varName] = varValue;
+        }
+    }
+}
+
+// Remove :setvar lines and replace variables
+var cleanedScript = new List<string>();
+
+foreach (var line in originalLines)
+{
+    if (line.TrimStart().StartsWith(":setvar"))
+    {
+        continue; // skip
+    }
+
+    var modifiedLine = line;
+
+    // Replace all variable usages like $(DatabaseName)
+    foreach (var (varName, varValue) in variableMap)
+    {
+        modifiedLine = modifiedLine.Replace($"$({varName})", varValue);
+    }
+
+    cleanedScript.Add(modifiedLine);
+}
+
+// Write cleaned script back
+File.WriteAllLines(@"C:\path\to\deploy-cleaned.sql", cleanedScript);
