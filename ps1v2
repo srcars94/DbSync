@@ -1,0 +1,54 @@
+# -------------------------------
+# CONFIGURATION
+# -------------------------------
+
+# Path to SqlPackage.exe
+# Adjust this if needed (depends on SQL tools version installed)
+$SqlPackagePath = "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe"
+
+# Path to your compiled DACPAC file
+$DacpacPath = "C:\path\to\your\MyDatabase.dacpac"
+
+# Target database connection
+$ConnectionString = "Server=localhost;Database=MyDatabase;Trusted_Connection=True;"
+
+# Optional: Additional publish parameters
+$AdditionalParameters = "/p:BlockOnPossibleDataLoss=False /p:QuoteAllNames=False"
+
+# -------------------------------
+# VALIDATIONS
+# -------------------------------
+
+if (!(Test-Path -Path $SqlPackagePath)) {
+    Write-Error "SqlPackage.exe not found at '$SqlPackagePath'. Please update the path."
+    exit 1
+}
+
+if (!(Test-Path -Path $DacpacPath)) {
+    Write-Error "Dacpac file not found at '$DacpacPath'. Please build your project first."
+    exit 1
+}
+
+# -------------------------------
+# DEPLOY DACPAC
+# -------------------------------
+
+try {
+    Write-Host "Starting DACPAC deployment..." -ForegroundColor Cyan
+
+    & $SqlPackagePath `
+        /Action:Publish `
+        /SourceFile:$DacpacPath `
+        /TargetConnectionString:$ConnectionString `
+        $AdditionalParameters
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "DACPAC published successfully!" -ForegroundColor Green
+    } else {
+        Write-Error "DACPAC publish failed with exit code $LASTEXITCODE."
+    }
+}
+catch {
+    Write-Error "An unexpected error occurred: $_"
+    exit 1
+}
