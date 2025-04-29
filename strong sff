@@ -1,0 +1,16 @@
+using System;
+using System.Text.RegularExpressions;
+
+class Program
+{
+    static void Main()
+    {
+        string sqlScript = builder.ToString(); // or your full string source
+
+        string pattern = @"IF\s+N'\$__IsSqlCmdEnabled'\s+NOT\s+LIKE\s+N'True'\s*BEGIN\s*.*?SET\s+NOEXEC\s+ON;\s*END\s*;?";
+        
+        string cleaned = Regex.Replace(sqlScript, pattern, "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+        Console.WriteLine(cleaned);
+    }
+}
