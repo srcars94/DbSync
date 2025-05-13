@@ -14,50 +14,42 @@ public class FakeDbDataReader : DbDataReader
         return _currentIndex < _data.Count;
     }
 
-    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+    public override Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
-        return await Task.FromResult(Read());
+        return Task.FromResult(Read());
     }
 
     public override int FieldCount => 2;
 
     public override string GetName(int ordinal)
     {
-        return ordinal switch
-        {
-            0 => "Id",
-            1 => "Name",
-            _ => throw new IndexOutOfRangeException()
-        };
+        if (ordinal == 0) return "Id";
+        if (ordinal == 1) return "Name";
+        throw new IndexOutOfRangeException();
     }
 
     public override int GetOrdinal(string name)
     {
-        return name.ToLower() switch
-        {
-            "id" => 0,
-            "name" => 1,
-            _ => throw new IndexOutOfRangeException()
-        };
+        if (string.Equals(name, "Id", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (string.Equals(name, "Name", StringComparison.OrdinalIgnoreCase)) return 1;
+        throw new IndexOutOfRangeException();
     }
 
     public override object GetValue(int ordinal)
     {
         var current = _data[_currentIndex];
-        return ordinal switch
-        {
-            0 => current.Id,
-            1 => current.Name,
-            _ => throw new IndexOutOfRangeException()
-        };
+        if (ordinal == 0) return current.Id;
+        if (ordinal == 1) return current.Name;
+        throw new IndexOutOfRangeException();
     }
 
     public override bool IsDBNull(int ordinal)
     {
-        return GetValue(ordinal) == null || GetValue(ordinal) == DBNull.Value;
+        var value = GetValue(ordinal);
+        return value == null || value is DBNull;
     }
 
-    public override bool HasRows => _data.Any();
+    public override bool HasRows => _data.Count > 0;
     public override bool IsClosed => false;
     public override int RecordsAffected => 0;
     public override bool NextResult() => false;
@@ -65,10 +57,8 @@ public class FakeDbDataReader : DbDataReader
     public override int Depth => 0;
     public override object this[int ordinal] => GetValue(ordinal);
     public override object this[string name] => GetValue(GetOrdinal(name));
-
     public override Type GetFieldType(int ordinal) => GetValue(ordinal).GetType();
     public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
-
     public override IEnumerator<object> GetEnumerator() => throw new NotImplementedException();
     public override System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
