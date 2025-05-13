@@ -1,0 +1,56 @@
+public class FakeDbDataReader : DbDataReader
+{
+    private readonly List<Dictionary<string, object>> _rows;
+    private int _currentIndex = -1;
+    private Dictionary<string, object> Current => _rows[_currentIndex];
+
+    public FakeDbDataReader(List<Dictionary<string, object>> rows)
+    {
+        _rows = rows;
+    }
+
+    public override int FieldCount => _rows[0].Count;
+
+    public override object GetValue(int ordinal)
+        => Current.Values.ElementAt(ordinal);
+
+    public override string GetName(int ordinal)
+        => Current.Keys.ElementAt(ordinal);
+
+    public override int GetOrdinal(string name)
+        => Current.Keys.ToList().FindIndex(k => k.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    public override bool IsDBNull(int ordinal)
+        => GetValue(ordinal) == null || GetValue(ordinal) is DBNull;
+
+    public override bool Read()
+    {
+        _currentIndex++;
+        return _currentIndex < _rows.Count;
+    }
+
+    public override Task<bool> ReadAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(Read());
+    }
+
+    // Required overrides, can throw or return defaults if unused in your mapper
+    public override bool HasRows => _rows.Count > 0;
+    public override bool IsClosed => false;
+    public override int RecordsAffected => 0;
+    public override bool NextResult() => false;
+    public override Task<bool> NextResultAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+
+    // Many other members must be overridden, but if you're only calling ReadAsync, GetOrdinal, GetValue, etc.,
+    // you're good for testing
+    public override Type GetFieldType(int ordinal) => GetValue(ordinal)?.GetType() ?? typeof(object);
+    public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
+
+    public override object this[int ordinal] => GetValue(ordinal);
+    public override object this[string name] => Current[name];
+
+    // Skip unsupported members (throw or return default)
+    public override int Depth => 0;
+    public override IEnumerator<object> GetEnumerator() => throw new NotImplementedException();
+    public override System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
