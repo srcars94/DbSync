@@ -32,10 +32,15 @@ if (-not (Test-Path $configFile)) {
 
 $configJson = Get-Content $configFile | ConvertFrom-Json
 $msbuildPath = $configJson.MSBuildPath
+$sqlPackagePath = $configJson.SqlPackagePath
+$dacpacPath = $configJson.DacpacPath
 $SqlCmdVariables = $configJson.SqlCmdVariables
 
 if (-not (Test-Path $msbuildPath)) {
     throw "MSBuild not found at: $msbuildPath"
+}
+if (-not (Test-Path $sqlPackagePath)) {
+    throw "sqlpackage.exe not found at: $sqlPackagePath"
 }
 
 function Build-SqlProj {
@@ -46,25 +51,15 @@ function Build-SqlProj {
     }
 }
 
-function Get-DacpacPath {
-    $projName = [System.IO.Path]::GetFileNameWithoutExtension($SqlProjPath)
-    $projDir = Split-Path -Parent $SqlProjPath
-    $dacpacPath = Join-Path -Path (Join-Path -Path $projDir -ChildPath "bin\$Configuration") -ChildPath "$projName.dacpac"
-
+function Publish-Dacpac {
     if (-not (Test-Path $dacpacPath)) {
         throw "DACPAC not found at: $dacpacPath"
     }
 
-    return $dacpacPath
-}
-
-function Publish-Dacpac {
-    param ([string]$DacpacPath)
-
     Write-Host "Publishing DACPAC to $ServerName\$DatabaseName"
     $args = @(
         "/Action:Publish",
-        "/SourceFile:$DacpacPath",
+        "/SourceFile:$dacpacPath",
         "/TargetServerName:$ServerName",
         "/TargetDatabaseName:$DatabaseName",
         "/TargetTrustServerCertificate:true",
@@ -76,18 +71,20 @@ function Publish-Dacpac {
         $args += "/v:$key=$($SqlCmdVariables.$key)"
     }
 
-    & sqlpackage @args
+    & "$sqlPackagePath" @args
 }
 
 function Script-And-Execute {
-    param ([string]$DacpacPath)
+    if (-not (Test-Path $dacpacPath)) {
+        throw "DACPAC not found at: $dacpacPath"
+    }
 
     $scriptPath = Join-Path -Path $outputDir -ChildPath "DeployScript.sql"
 
     Write-Host "Generating deployment script..."
     $args = @(
         "/Action:Script",
-        "/SourceFile:$DacpacPath",
+        "/SourceFile:$dacpacPath",
         "/TargetServerName:$ServerName",
         "/TargetDatabaseName:$DatabaseName",
         "/OutputPath:$scriptPath",
@@ -100,7 +97,7 @@ function Script-And-Execute {
         $args += "/v:$key=$($SqlCmdVariables.$key)"
     }
 
-    & sqlpackage @args
+    & "$sqlPackagePath" @args
 
     if (-not (Test-Path $scriptPath)) {
         throw "Failed to generate deployment script."
@@ -112,9 +109,8 @@ function Script-And-Execute {
 
 # Main flow
 Build-SqlProj
-$dacpac = Get-DacpacPath
 
 switch ($Mode) {
-    "Publish"          { Publish-Dacpac -DacpacPath $dacpac }
-    "ScriptAndExecute" { Script-And-Execute -DacpacPath $dacpac }
+    "Publish"          { Publish-Dacpac }
+    "ScriptAndExecute" { Script-And-Execute }
 }
