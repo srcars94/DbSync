@@ -1,0 +1,31 @@
+1. Test HTTP to HTTPS Redirect (PowerShell)
+
+Run this in PowerShell to see the redirect response:
+
+$response = Invoke-WebRequest -Uri "http://yourdomain.com/MyApp/API/list/myendpoint" -MaximumRedirection 0 -ErrorAction SilentlyContinue
+$response.StatusCode
+$response.Headers.Location
+
+You should see:
+
+StatusCode = 301 or 302
+
+Location = https://yourdomain.com/MyApp/API/list/myendpoint
+
+
+
+---
+
+2. Test HSTS Header (PowerShell)
+
+This only works over HTTPS, since HSTS is sent on secure connections.
+
+$response = Invoke-WebRequest -Uri "https://yourdomain.com/MyApp/API/list/myendpoint"
+$response.StatusCode
+$response.Headers.'Strict-Transport-Security'
+
+You should see:
+
+StatusCode = 200 (or the actual API response code)
+
+Strict-Transport-Security = max-age=31536000; includeSubDomains; preload
