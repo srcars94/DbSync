@@ -1,0 +1,45 @@
+using NUnit.Framework;
+
+[TestFixture]
+public class OfficeDayCalculatorTests
+{
+    [TestCase(23, 0, 0, 8)]  // Full month, no leave
+    [TestCase(23, 5, 0, 6)]  // 5 holidays
+    [TestCase(23, 5, 2, 6)]  // 5 holidays + 2 sick
+    [TestCase(23, 10, 5, 3)] // 10 holidays + 5 sick
+    [TestCase(20, 0, 0, 8)]  // Shorter month
+    [TestCase(20, 5, 3, 5)]  // Mix of leave
+    public void CalculatesRequiredOfficeDaysCorrectly(int totalWorkingDays, int holidayDays, int sickDays, int expectedOfficeDays)
+    {
+        int result = OfficeDayCalculator.GetRequiredOfficeDays(totalWorkingDays, holidayDays, sickDays);
+        Assert.AreEqual(expectedOfficeDays, result);
+    }
+
+    [Test]
+    public void ReturnsZero_WhenAllDaysAreTakenOff()
+    {
+        int result = OfficeDayCalculator.GetRequiredOfficeDays(20, 20, 0);
+        Assert.AreEqual(0, result);
+    }
+
+    [Test]
+    public void ReturnsZero_WhenSickDaysExceedWorkdays()
+    {
+        int result = OfficeDayCalculator.GetRequiredOfficeDays(20, 0, 25);
+        Assert.AreEqual(0, result);
+    }
+
+    [Test]
+    public void DoesNotReturnMoreThanRequiredDays()
+    {
+        int result = OfficeDayCalculator.GetRequiredOfficeDays(23, 0, 0, 8);
+        Assert.AreEqual(8, result);
+    }
+
+    [Test]
+    public void HandlesZeroWorkingDays()
+    {
+        int result = OfficeDayCalculator.GetRequiredOfficeDays(0, 0, 0, 8);
+        Assert.AreEqual(0, result);
+    }
+}
