@@ -1,0 +1,86 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using NUnit.Framework;
+using Quoting.Shared.Extensions; // where Select lives
+
+namespace Quoting.Shared.Extensions.Tests
+{
+    [TestFixture]
+    public class AwaitExtensionsTests
+    {
+        [Test]
+        public async Task Select_Maps_Int_To_String()
+        {
+            var result = await Task.FromResult(123).Select(x => x.ToString());
+            Assert.That(result, Is.EqualTo("123"));
+        }
+
+        private sealed record User(int Id, string Name);
+
+        [Test]
+        public async Task Select_Projects_Object_Property()
+        {
+            var user = new User(7, "Sam");
+            var result = await Task.FromResult(user).Select(u => u.Name);
+            Assert.That(result, Is.EqualTo("Sam"));
+        }
+
+        [Test]
+        public async Task Select_Waits_For_Source_Task()
+        {
+            var completed = false;
+
+            var task = Task.Run(async () =>
+            {
+                await Task.Delay(50);
+                completed = true;
+                return 10;
+            });
+
+            var mapped = await task.Select(x => x * 2);
+
+            Assert.That(completed, Is.True);
+            Assert.That(mapped, Is.EqualTo(20));
+        }
+
+        [Test]
+        public void Select_Propagates_Source_Exception()
+        {
+            Task<int> faulted = Task.Run<int>(() => throw new InvalidOperationException("boom"));
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await faulted.Select(x => x));
+        }
+
+        [Test]
+        public void Select_Propagates_Selector_Exception()
+        {
+            var src = Task.FromResult(42);
+            Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+                await src.Select<int, int>(_ => throw new ArgumentOutOfRangeException()));
+        }
+
+        [Test]
+        public void Select_Propagates_Cancellation()
+        {
+            var cts = new CancellationTokenSource();
+            var canceled = Task.FromCanceled<int>(cts.Token);
+            Assert.ThrowsAsync<TaskCanceledException>(async () => await canceled.Select(x => x));
+        }
+
+        [Test]
+        public async Task Select_Allows_Null_Result_From_Selector()
+        {
+            var result = await Task.FromResult("abc").Select<string, string?>(_ => null);
+            Assert.That(result, Is.Null);
+        }
+
+        // Enable this test if you add null guards in your extension.
+        // (Use ArgumentNullException.ThrowIfNull for source/selector.)
+        [Test]
+        public void Select_Throws_On_Null_Selector()
+        {
+            Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await Task.FromResult(1).Select<int, int>(null!));
+        }
+    }
+}
