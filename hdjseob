@@ -1,24 +1,101 @@
 using NUnit.Framework;
+using System;
 
-namespace Quoting.Shared.Extensions.Tests
+namespace AddressExtensionsTests
 {
-    [TestFixture]
-    public class StringExtensions_TidySeparatedList_Tests
+    public class GetConcatenatedAddressTests
     {
-        [TestCase(null,                    ExpectedResult = "")]
-        [TestCase("",                      ExpectedResult = "")]
-        [TestCase("   ",                   ExpectedResult = "")]
-        [TestCase("apple",                 ExpectedResult = "apple")]
-        [TestCase("apple;banana",          ExpectedResult = "apple;banana")]
-        [TestCase("apple,banana",          ExpectedResult = "apple;banana",  TestName = "Normalizes_Commas_To_Semicolons")]
-        [TestCase(" apple ; banana ",      ExpectedResult = "apple;banana",  TestName = "Trims_Items")]
-        [TestCase("apple;;banana",         ExpectedResult = "apple;banana",  TestName = "Removes_Empty_Items_DoubleSep")]
-        [TestCase(";apple; ;banana;",      ExpectedResult = "apple;banana",  TestName = "Removes_Empty_Items_LeadingTrailing")]
-        [TestCase("apple;banana;apple",    ExpectedResult = "apple;banana",  TestName = "Removes_Duplicates")]
-        [TestCase("apple,,banana,,",       ExpectedResult = "apple;banana",  TestName = "Handles_Consecutive_Commas")]
-        [TestCase("apple ,  banana , apple",ExpectedResult = "apple;banana", TestName = "Trims_And_Dedup_From_Commas")]
-        [TestCase("orange;APPLE;apple",    ExpectedResult = "orange;APPLE;apple", TestName = "Distinct_Is_CaseSensitive")]
-        public string TidySeparatedList_Works(string input)
-            => input.TidySeparatedList();
+        private class Address
+        {
+            public string? FreeText1 { get; set; }
+            public string? FreeText2 { get; set; }
+            public string? BuildingNumber { get; set; }
+            public string? BuildingName { get; set; }
+            public string? DependentThoroughfare { get; set; }
+            public string? Thoroughfare { get; set; }
+            public string? DoubleDependentLocality { get; set; }
+            public string? DependentLocality { get; set; }
+            public string? PostTown { get; set; }
+            public string? County { get; set; }
+        }
+
+        [Test]
+        public void AllFieldsPopulated_ReturnsConcatenatedAddress()
+        {
+            var address = new Address
+            {
+                FreeText1 = "Line1",
+                FreeText2 = "Line2",
+                BuildingNumber = "10",
+                BuildingName = "The Oaks",
+                DependentThoroughfare = "Side St",
+                Thoroughfare = "Main St",
+                DoubleDependentLocality = "Hamlet",
+                DependentLocality = "Village",
+                PostTown = "Townsville",
+                County = "Essex"
+            };
+
+            var result = address.GetConcatenatedAddress();
+
+            Assert.That(result, Is.EqualTo(
+                "Line1, Line2, 10, The Oaks, Side St, Main St, Hamlet, Village, Townsville, Essex"
+            ));
+        }
+
+        [Test]
+        public void SomeFieldsEmpty_SkipsEmptyOnes()
+        {
+            var address = new Address
+            {
+                FreeText1 = "Line1",
+                BuildingName = "The Oaks",
+                PostTown = "Townsville"
+            };
+
+            var result = address.GetConcatenatedAddress();
+
+            Assert.That(result, Is.EqualTo(
+                "Line1, The Oaks, Townsville"
+            ));
+        }
+
+        [Test]
+        public void AllFieldsNull_ReturnsEmptyString()
+        {
+            var address = new Address();
+
+            var result = address.GetConcatenatedAddress();
+
+            Assert.That(result, Is.EqualTo(string.Empty));
+        }
+
+        [Test]
+        public void TruncatesTo2000Characters()
+        {
+            var longText = new string('X', 3000);
+            var address = new Address
+            {
+                FreeText1 = longText
+            };
+
+            var result = address.GetConcatenatedAddress();
+
+            Assert.That(result.Length, Is.EqualTo(2000));
+        }
+
+        [Test]
+        public void HandlesNullPropertiesGracefully()
+        {
+            var address = new Address
+            {
+                FreeText1 = null,
+                County = "Essex"
+            };
+
+            var result = address.GetConcatenatedAddress();
+
+            Assert.That(result, Is.EqualTo("Essex"));
+        }
     }
 }
