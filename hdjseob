@@ -1,137 +1,107 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using NUnit.Framework;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace YourProject.Tests
 {
-    public class Parameter
-    {
-        public string Value { get; set; } = "";
-        public int Utility { get; set; }
-    }
-
-    public class NoValue
-    {
-        public string SomethingElse { get; set; } = "";
-    }
-
     [TestFixture]
-    public class AsyncEnumerableExtensionsTests
+    public class EnumerableExtensionsTests
     {
-        // Helper to create a Task<IEnumerable<T>>
-        private static Task<IEnumerable<T>> AsTask<T>(IEnumerable<T> items) => Task.FromResult(items);
+        private static Task<IEnumerable<Parameter>> AsTask(IEnumerable<Parameter> items) 
+            => Task.FromResult(items);
 
         [Test]
-        public async Task FirstValueAsync_ReturnsParsedDecimal_FromFirstItem()
+        public void FirstValue_OnList_ReturnsParsedInt()
         {
-            var items = new[]
+            var list = new List<Parameter>
             {
-                new Parameter { Value = "12.5" },
+                new Parameter { Value = "42" },
                 new Parameter { Value = "99" }
             };
 
-            decimal? result = await AsTask(items)
-                .FirstValueAsync(decimal.Parse);
+            var result = list.FirstValue<Parameter, int>(p => p.Value);
 
-            Assert.That(result, Is.EqualTo(12.5m));
+            Assert.That(result, Is.EqualTo(42));
         }
 
         [Test]
-        public async Task FirstValueAsync_UsesPredicate_ToSelectMatchingItem()
+        public void FirstValue_OnList_WithPredicate_ReturnsFiltered()
         {
-            var items = new[]
+            var list = new List<Parameter>
             {
-                new Parameter { Value = "10", Utility = 0 },
-                new Parameter { Value = "42", Utility = 2 },
-                new Parameter { Value = "77", Utility = 3 },
+                new Parameter { Value = "42", Utility = 1 },
+                new Parameter { Value = "77", Utility = 2 }
             };
 
-            decimal? result = await AsTask(items)
-                .FirstValueAsync(
-                    selector: decimal.Parse,
-                    predicate: p => p.Utility == 2);
+            var result = list.FirstValue<Parameter, int>(p => p.Value, p => p.Utility == 2);
 
-            Assert.That(result, Is.EqualTo(42m));
+            Assert.That(result, Is.EqualTo(77));
         }
 
         [Test]
-        public async Task FirstValueAsync_ReturnsNull_WhenSequenceEmpty()
+        public void FirstValue_OnEmptyList_ReturnsNull()
         {
-            var items = Array.Empty<Parameter>();
+            var list = new List<Parameter>();
 
-            decimal? result = await AsTask(items)
-                .FirstValueAsync(decimal.Parse);
+            var result = list.FirstValue<Parameter, int>(p => p.Value);
 
             Assert.That(result, Is.Null);
         }
 
         [Test]
-        public async Task FirstValueAsync_ReturnsNull_WhenValueIsNullOrWhitespace()
+        public void FirstValue_OnList_WithNullOrWhitespaceValue_ReturnsNull()
         {
-            var items = new[]
+            var list = new List<Parameter>
             {
-                new Parameter { Value = " " },      // whitespace
-                new Parameter { Value = null! },    // null
+                new Parameter { Value = "   " },
+                new Parameter { Value = null }
             };
 
-            decimal? result = await AsTask(items)
-                .FirstValueAsync(decimal.Parse);
+            var result = list.FirstValue<Parameter, int>(p => p.Value);
 
             Assert.That(result, Is.Null);
         }
 
         [Test]
-        public async Task FirstValueAsync_ReturnsNull_WhenTypeHasNoValueProperty()
+        public async Task FirstValueAsync_OnTaskEnumerable_ReturnsParsedDecimal()
         {
-            var items = new[]
+            var list = new List<Parameter>
             {
-                new NoValue { SomethingElse = "abc" }
+                new Parameter { Value = "3.14" }
             };
 
-            int? result = await AsTask(items)
-                .FirstValueAsync<int>(int.Parse);
+            var result = await AsTask(list).FirstValueAsync<Parameter, decimal>(p => p.Value);
+
+            Assert.That(result, Is.EqualTo(3.14m));
+        }
+
+        [Test]
+        public async Task FirstValueAsync_OnTaskEnumerable_WithPredicate_ReturnsFiltered()
+        {
+            var list = new List<Parameter>
+            {
+                new Parameter { Value = "1.1", Utility = 0 },
+                new Parameter { Value = "2.2", Utility = 99 }
+            };
+
+            var result = await AsTask(list)
+                .FirstValueAsync<Parameter, decimal>(p => p.Value, p => p.Utility == 99);
+
+            Assert.That(result, Is.EqualTo(2.2m));
+        }
+
+        [Test]
+        public async Task FirstValueAsync_OnTaskEnumerable_WhenNoMatch_ReturnsNull()
+        {
+            var list = new List<Parameter>
+            {
+                new Parameter { Value = "123", Utility = 1 }
+            };
+
+            var result = await AsTask(list)
+                .FirstValueAsync<Parameter, int>(p => p.Value, p => p.Utility == 99);
 
             Assert.That(result, Is.Null);
-        }
-
-        [Test]
-        public async Task FirstValueAsync_DoesNotCallSelector_WhenNoMatch()
-        {
-            var items = new[]
-            {
-                new Parameter { Value = "100", Utility = 1 },
-                new Parameter { Value = "200", Utility = 1 }
-            };
-
-            var called = 0;
-
-            decimal? result = await AsTask(items)
-                .FirstValueAsync(
-                    selector: s => { called++; return decimal.Parse(s); },
-                    predicate: p => p.Utility == 999); // no match
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(result, Is.Null);
-                Assert.That(called, Is.EqualTo(0), "Selector should not be called when there is no match");
-            });
-        }
-
-        [Test]
-        public async Task FirstValueAsync_UsesFirst_WhenPredicateNull()
-        {
-            var items = new[]
-            {
-                new Parameter { Value = "5" },
-                new Parameter { Value = "6" }
-            };
-
-            int? result = await AsTask(items)
-                .FirstValueAsync(int.Parse, predicate: null);
-
-            Assert.That(result, Is.EqualTo(5));
         }
     }
 }
