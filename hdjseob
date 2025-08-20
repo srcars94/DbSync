@@ -1,101 +1,137 @@
-using NUnit.Framework;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using NUnit.Framework;
 
-namespace AddressExtensionsTests
+namespace YourProject.Tests
 {
-    public class GetConcatenatedAddressTests
+    public class Parameter
     {
-        private class Address
-        {
-            public string? FreeText1 { get; set; }
-            public string? FreeText2 { get; set; }
-            public string? BuildingNumber { get; set; }
-            public string? BuildingName { get; set; }
-            public string? DependentThoroughfare { get; set; }
-            public string? Thoroughfare { get; set; }
-            public string? DoubleDependentLocality { get; set; }
-            public string? DependentLocality { get; set; }
-            public string? PostTown { get; set; }
-            public string? County { get; set; }
-        }
+        public string Value { get; set; } = "";
+        public int Utility { get; set; }
+    }
+
+    public class NoValue
+    {
+        public string SomethingElse { get; set; } = "";
+    }
+
+    [TestFixture]
+    public class AsyncEnumerableExtensionsTests
+    {
+        // Helper to create a Task<IEnumerable<T>>
+        private static Task<IEnumerable<T>> AsTask<T>(IEnumerable<T> items) => Task.FromResult(items);
 
         [Test]
-        public void AllFieldsPopulated_ReturnsConcatenatedAddress()
+        public async Task FirstValueAsync_ReturnsParsedDecimal_FromFirstItem()
         {
-            var address = new Address
+            var items = new[]
             {
-                FreeText1 = "Line1",
-                FreeText2 = "Line2",
-                BuildingNumber = "10",
-                BuildingName = "The Oaks",
-                DependentThoroughfare = "Side St",
-                Thoroughfare = "Main St",
-                DoubleDependentLocality = "Hamlet",
-                DependentLocality = "Village",
-                PostTown = "Townsville",
-                County = "Essex"
+                new Parameter { Value = "12.5" },
+                new Parameter { Value = "99" }
             };
 
-            var result = address.GetConcatenatedAddress();
+            decimal? result = await AsTask(items)
+                .FirstValueAsync(decimal.Parse);
 
-            Assert.That(result, Is.EqualTo(
-                "Line1, Line2, 10, The Oaks, Side St, Main St, Hamlet, Village, Townsville, Essex"
-            ));
+            Assert.That(result, Is.EqualTo(12.5m));
         }
 
         [Test]
-        public void SomeFieldsEmpty_SkipsEmptyOnes()
+        public async Task FirstValueAsync_UsesPredicate_ToSelectMatchingItem()
         {
-            var address = new Address
+            var items = new[]
             {
-                FreeText1 = "Line1",
-                BuildingName = "The Oaks",
-                PostTown = "Townsville"
+                new Parameter { Value = "10", Utility = 0 },
+                new Parameter { Value = "42", Utility = 2 },
+                new Parameter { Value = "77", Utility = 3 },
             };
 
-            var result = address.GetConcatenatedAddress();
+            decimal? result = await AsTask(items)
+                .FirstValueAsync(
+                    selector: decimal.Parse,
+                    predicate: p => p.Utility == 2);
 
-            Assert.That(result, Is.EqualTo(
-                "Line1, The Oaks, Townsville"
-            ));
+            Assert.That(result, Is.EqualTo(42m));
         }
 
         [Test]
-        public void AllFieldsNull_ReturnsEmptyString()
+        public async Task FirstValueAsync_ReturnsNull_WhenSequenceEmpty()
         {
-            var address = new Address();
+            var items = Array.Empty<Parameter>();
 
-            var result = address.GetConcatenatedAddress();
+            decimal? result = await AsTask(items)
+                .FirstValueAsync(decimal.Parse);
 
-            Assert.That(result, Is.EqualTo(string.Empty));
+            Assert.That(result, Is.Null);
         }
 
         [Test]
-        public void TruncatesTo2000Characters()
+        public async Task FirstValueAsync_ReturnsNull_WhenValueIsNullOrWhitespace()
         {
-            var longText = new string('X', 3000);
-            var address = new Address
+            var items = new[]
             {
-                FreeText1 = longText
+                new Parameter { Value = " " },      // whitespace
+                new Parameter { Value = null! },    // null
             };
 
-            var result = address.GetConcatenatedAddress();
+            decimal? result = await AsTask(items)
+                .FirstValueAsync(decimal.Parse);
 
-            Assert.That(result.Length, Is.EqualTo(2000));
+            Assert.That(result, Is.Null);
         }
 
         [Test]
-        public void HandlesNullPropertiesGracefully()
+        public async Task FirstValueAsync_ReturnsNull_WhenTypeHasNoValueProperty()
         {
-            var address = new Address
+            var items = new[]
             {
-                FreeText1 = null,
-                County = "Essex"
+                new NoValue { SomethingElse = "abc" }
             };
 
-            var result = address.GetConcatenatedAddress();
+            int? result = await AsTask(items)
+                .FirstValueAsync<int>(int.Parse);
 
-            Assert.That(result, Is.EqualTo("Essex"));
+            Assert.That(result, Is.Null);
+        }
+
+        [Test]
+        public async Task FirstValueAsync_DoesNotCallSelector_WhenNoMatch()
+        {
+            var items = new[]
+            {
+                new Parameter { Value = "100", Utility = 1 },
+                new Parameter { Value = "200", Utility = 1 }
+            };
+
+            var called = 0;
+
+            decimal? result = await AsTask(items)
+                .FirstValueAsync(
+                    selector: s => { called++; return decimal.Parse(s); },
+                    predicate: p => p.Utility == 999); // no match
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result, Is.Null);
+                Assert.That(called, Is.EqualTo(0), "Selector should not be called when there is no match");
+            });
+        }
+
+        [Test]
+        public async Task FirstValueAsync_UsesFirst_WhenPredicateNull()
+        {
+            var items = new[]
+            {
+                new Parameter { Value = "5" },
+                new Parameter { Value = "6" }
+            };
+
+            int? result = await AsTask(items)
+                .FirstValueAsync(int.Parse, predicate: null);
+
+            Assert.That(result, Is.EqualTo(5));
         }
     }
 }
