@@ -1,107 +1,85 @@
-using NUnit.Framework;
+using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using NUnit.Framework;
 
-namespace YourProject.Tests
+namespace ShallowCloneTests
 {
-    [TestFixture]
-    public class EnumerableExtensionsTests
+    // ====== SUT ======
+    public static class CloneExtensions
     {
-        private static Task<IEnumerable<Parameter>> AsTask(IEnumerable<Parameter> items) 
-            => Task.FromResult(items);
-
-        [Test]
-        public void FirstValue_OnList_ReturnsParsedInt()
+        public static T ShallowClone<T>(this T source) where T : class
         {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "42" },
-                new Parameter { Value = "99" }
-            };
+            if (source == null) throw new ArgumentNullException(nameof(source));
 
-            var result = list.FirstValue<Parameter, int>(p => p.Value);
+            var type = source.GetType();
+            var cloneMethod = type.GetMethod("MemberwiseClone",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 
-            Assert.That(result, Is.EqualTo(42));
-        }
+            if (cloneMethod == null)
+                throw new InvalidOperationException($"Type {type.FullName} does not support cloning.");
 
-        [Test]
-        public void FirstValue_OnList_WithPredicate_ReturnsFiltered()
-        {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "42", Utility = 1 },
-                new Parameter { Value = "77", Utility = 2 }
-            };
-
-            var result = list.FirstValue<Parameter, int>(p => p.Value, p => p.Utility == 2);
-
-            Assert.That(result, Is.EqualTo(77));
-        }
-
-        [Test]
-        public void FirstValue_OnEmptyList_ReturnsNull()
-        {
-            var list = new List<Parameter>();
-
-            var result = list.FirstValue<Parameter, int>(p => p.Value);
-
-            Assert.That(result, Is.Null);
-        }
-
-        [Test]
-        public void FirstValue_OnList_WithNullOrWhitespaceValue_ReturnsNull()
-        {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "   " },
-                new Parameter { Value = null }
-            };
-
-            var result = list.FirstValue<Parameter, int>(p => p.Value);
-
-            Assert.That(result, Is.Null);
-        }
-
-        [Test]
-        public async Task FirstValueAsync_OnTaskEnumerable_ReturnsParsedDecimal()
-        {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "3.14" }
-            };
-
-            var result = await AsTask(list).FirstValueAsync<Parameter, decimal>(p => p.Value);
-
-            Assert.That(result, Is.EqualTo(3.14m));
-        }
-
-        [Test]
-        public async Task FirstValueAsync_OnTaskEnumerable_WithPredicate_ReturnsFiltered()
-        {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "1.1", Utility = 0 },
-                new Parameter { Value = "2.2", Utility = 99 }
-            };
-
-            var result = await AsTask(list)
-                .FirstValueAsync<Parameter, decimal>(p => p.Value, p => p.Utility == 99);
-
-            Assert.That(result, Is.EqualTo(2.2m));
-        }
-
-        [Test]
-        public async Task FirstValueAsync_OnTaskEnumerable_WhenNoMatch_ReturnsNull()
-        {
-            var list = new List<Parameter>
-            {
-                new Parameter { Value = "123", Utility = 1 }
-            };
-
-            var result = await AsTask(list)
-                .FirstValueAsync<Parameter, int>(p => p.Value, p => p.Utility == 99);
-
-            Assert.That(result, Is.Null);
+            return (T)cloneMethod.Invoke(source, null)!;
         }
     }
-}
+
+    // ====== Test models ======
+    public class Address
+    {
+        public string City { get; set; } = "";
+    }
+
+    public class Person
+    {
+        public string Name { get; set; } = "";
+        public Address Address { get; set; } = new Address();
+        public int Age { get; set; }
+        public readonly Guid Id = Guid.NewGuid();            // readonly field to ensure it’s copied
+        private string _secret = "shh";                      // private field to ensure MemberwiseClone copies it
+
+        public string GetSecret() => _secret;
+        public void SetSecret(string s) => _secret = s;
+    }
+
+    public sealed class SealedType
+    {
+        public List<int> Numbers { get; set; } = new List<int> { 1, 2, 3 };
+        public int Count => Numbers.Count;
+    }
+
+    public class Animal { public string Species { get; set; } = ""; }
+    public class Dog : Animal { public string Breed { get; set; } = ""; }
+
+    // ====== Tests ======
+    [TestFixture]
+    public class ShallowCloneExtensionTests
+    {
+        [Test]
+        public void ShallowClone_Null_Throws()
+        {
+            Person? source = null;
+            Assert.Throws<ArgumentNullException>(() => source!.ShallowClone());
+        }
+
+        [Test]
+        public void ShallowClone_CopiesTopLevelValues_ButSharesReferences()
+        {
+            var original = new Person
+            {
+                Name = "Sam",
+                Age = 30,
+                Address = new Address { City = "London" }
+            };
+
+            var clone = original.ShallowClone();
+
+            // Different top-level references
+            Assert.AreNotSame(original, clone);
+
+            // Value-type field copied by value
+            Assert.AreEqual(30, clone.Age);
+            clone.Age = 31;
+            Assert.AreEqual(30, original.Age, "Changing clone value-type should not affect original");
+
+            // Reference-type field shared
+            Assert.AreSame(original.Address, clone.Address, "Address should be the same instance (shallow)");
+            clone.Address.City = "
