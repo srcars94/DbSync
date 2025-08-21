@@ -82,4 +82,91 @@ namespace ShallowCloneTests
 
             // Reference-type field shared
             Assert.AreSame(original.Address, clone.Address, "Address should be the same instance (shallow)");
-            clone.Address.City = "
+            clone.Address.City = "Manchester";
+            Assert.AreEqual("Manchester", original.Address.City, "Changing shared reference affects both");
+
+            // String property (reference type but immutable) value equality
+            Assert.AreEqual("Sam", clone.Name);
+            clone.Name = "Alex";
+            Assert.AreEqual("Sam", original.Name, "Changing string ref to a new string should not affect original");
+        }
+
+        [Test]
+        public void ShallowClone_CopiesPrivateAndReadonlyFields()
+        {
+            var original = new Person();
+            var originalId = original.Id;
+            var originalSecret = original.GetSecret();
+
+            var clone = original.ShallowClone();
+
+            // readonly field copied
+            Assert.AreEqual(originalId, clone.Id);
+
+            // private field copied (accessible via method)
+            Assert.AreEqual(originalSecret, clone.GetSecret());
+
+            // Mutating clone’s private field doesn’t change original (because top-level object is distinct)
+            clone.SetSecret("changed");
+            Assert.AreEqual("shh", original.GetSecret());
+            Assert.AreEqual("changed", clone.GetSecret());
+        }
+
+        [Test]
+        public void ShallowClone_WorksForSealedTypes_AndSharesInnerCollections()
+        {
+            var original = new SealedType();
+            var clone = original.ShallowClone();
+
+            Assert.AreNotSame(original, clone);
+            Assert.AreEqual(original.Count, clone.Count);
+
+            // Same inner list instance
+            Assert.AreSame(original.Numbers, clone.Numbers);
+
+            // Mutate shared list via clone, reflected in original
+            clone.Numbers.Add(4);
+            Assert.AreEqual(4, original.Count);
+        }
+
+        [Test]
+        public void ShallowClone_RespectsRuntimeType_WhenVariableIsBaseClass()
+        {
+            Animal animal = new Dog { Species = "Canine", Breed = "Collie" };
+            var clonedAsBase = animal.ShallowClone(); // T inferred as Animal
+
+            // Still a Dog at runtime
+            Assert.IsInstanceOf<Dog>(clonedAsBase);
+            var dog = (Dog)clonedAsBase;
+
+            Assert.AreEqual("Canine", dog.Species);
+            Assert.AreEqual("Collie", dog.Breed);
+        }
+
+        [Test]
+        public void ShallowClone_ArraysAndLists_AreSharedReferences()
+        {
+            var original = new
+            {
+                Numbers = new List<int> { 1, 2, 3 },
+                Arr = new[] { "a", "b" }
+            };
+
+            var clone = original.ShallowClone();
+
+            // Anonymous type: shallow clone gives another instance with same field refs
+            Assert.AreNotSame(original, clone);
+
+            // Lists/arrays share the same reference
+            Assert.AreSame(original.Numbers, clone.Numbers);
+            Assert.AreSame(original.Arr, clone.Arr);
+
+            // Mutations reflect across both
+            clone.Numbers.Add(4);
+            Assert.AreEqual(4, original.Numbers.Count);
+
+            clone.Arr[0] = "z";
+            Assert.AreEqual("z", original.Arr[0]);
+        }
+    }
+}
