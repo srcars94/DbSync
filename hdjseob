@@ -1,172 +1,129 @@
-using System;
-using System.Collections.Generic;
+using System.IO;
+using System.Net.Mail;
+using System.Threading;
+using System.Threading.Tasks;
+using Moq;
 using NUnit.Framework;
 
-namespace ShallowCloneTests
+[TestFixture]
+public class SmtpEmailClientConfigurationTests
 {
-    // ====== SUT ======
-    public static class CloneExtensions
+    private Mock<IConfigurationHandler<EmailSettings>> _cfg;
+    private Mock<ISmtpClientGenerator> _generator;
+    private Mock<ISmtpClient> _client;
+
+    private SmtpEmailClientConfiguration _sut; // your class under test
+
+    [SetUp]
+    public void SetUp()
     {
-        public static T ShallowClone<T>(this T source) where T : class
-        {
-            if (source == null) throw new ArgumentNullException(nameof(source));
+        _cfg = new Mock<IConfigurationHandler<EmailSettings>>();
+        _generator = new Mock<ISmtpClientGenerator>();
+        _client = new Mock<ISmtpClient>();
 
-            var type = source.GetType();
-            var cloneMethod = type.GetMethod("MemberwiseClone",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        _generator.Setup(g => g.GenerateClient()).Returns(_client.Object);
 
-            if (cloneMethod == null)
-                throw new InvalidOperationException($"Type {type.FullName} does not support cloning.");
-
-            return (T)cloneMethod.Invoke(source, null)!;
-        }
+        _sut = new SmtpEmailClientConfiguration(_cfg.Object, _generator.Object);
     }
 
-    // ====== Test models ======
-    public class Address
+    [Test]
+    public async Task ConfigureAndSend_UsesPickup_DropsFileAndSendsOnce()
     {
-        public string City { get; set; } = "";
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), "test-emails-" + Path.GetRandomFileName());
+        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
+        {
+            UseLocalPickupDirectory = true,
+            LocalEmailDirectory = tempDir
+        });
+
+        using var msg = new MailMessage("from@x.com", "to@x.com", "subj", "body");
+
+        // Act
+        await _sut.ConfigureAndSend(msg, environment: "Local"); // not Dev/Uat/Demo/Prod so only pickup branch
+
+        // Assert
+        Assert.That(Directory.Exists(tempDir), Is.True, "Pickup directory should be created.");
+        _generator.Verify(g => g.GenerateClient(), Times.Once);
+        _client.Verify(c => c.SendMailAsync(It.IsAny<MailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    public class Person
+    [Test]
+    public async Task ConfigureAndSend_DevEnvironment_SendsOnce_NoPickup()
     {
-        public string Name { get; set; } = "";
-        public Address Address { get; set; } = new Address();
-        public int Age { get; set; }
-        public readonly Guid Id = Guid.NewGuid();            // readonly field to ensure it’s copied
-        private string _secret = "shh";                      // private field to ensure MemberwiseClone copies it
+        // Arrange
+        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
+        {
+            UseLocalPickupDirectory = false
+        });
 
-        public string GetSecret() => _secret;
-        public void SetSecret(string s) => _secret = s;
+        using var msg = new MailMessage("from@x.com", "dev@myCompany.com", "dev-subj", "body");
+
+        // Act
+        await _sut.ConfigureAndSend(msg, Environments.Dev);
+
+        // Assert
+        _generator.Verify(g => g.GenerateClient(), Times.Once);
+        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    public sealed class SealedType
+    [TestCase(Environments.Uat)]
+    [TestCase(Environments.Demo)]
+    public async Task ConfigureAndSend_UatOrDemo_SendsOnce_NoPickup(string env)
     {
-        public List<int> Numbers { get; set; } = new List<int> { 1, 2, 3 };
-        public int Count => Numbers.Count;
+        // Arrange
+        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
+        {
+            UseLocalPickupDirectory = false
+        });
+
+        using var msg = new MailMessage("from@x.com", "qa@theCompany.com", "uat/demo", "body");
+
+        // Act
+        await _sut.ConfigureAndSend(msg, env);
+
+        // Assert
+        _generator.Verify(g => g.GenerateClient(), Times.Once);
+        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    public class Animal { public string Species { get; set; } = ""; }
-    public class Dog : Animal { public string Breed { get; set; } = ""; }
-
-    // ====== Tests ======
-    [TestFixture]
-    public class ShallowCloneExtensionTests
+    [Test]
+    public async Task ConfigureAndSend_Prod_SendsOnce_NoPickup()
     {
-        [Test]
-        public void ShallowClone_Null_Throws()
+        // Arrange
+        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
         {
-            Person? source = null;
-            Assert.Throws<ArgumentNullException>(() => source!.ShallowClone());
-        }
+            UseLocalPickupDirectory = false
+        });
 
-        [Test]
-        public void ShallowClone_CopiesTopLevelValues_ButSharesReferences()
+        using var msg = new MailMessage("from@x.com", "ops@theCompany.com", "prod", "body");
+
+        // Act
+        await _sut.ConfigureAndSend(msg, Environments.Prod);
+
+        // Assert
+        _generator.Verify(g => g.GenerateClient(), Times.Once);
+        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Test]
+    public async Task ConfigureAndSend_Pickup_Then_Dev_WouldDoubleSend_IfNoEarlyReturn()
+    {
+        // This test documents the potential double-send.
+        // If you KEEP the early return, set expectedCalls = 1.
+        // If you REMOVE the early return, set expectedCalls = 2 and use environment=Dev.
+        var tempDir = Path.Combine(Path.GetTempPath(), "test-emails-" + Path.GetRandomFileName());
+        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
         {
-            var original = new Person
-            {
-                Name = "Sam",
-                Age = 30,
-                Address = new Address { City = "London" }
-            };
+            UseLocalPickupDirectory = true,
+            LocalEmailDirectory = tempDir
+        });
 
-            var clone = original.ShallowClone();
+        using var msg = new MailMessage("from@x.com", "to@x.com", "subj", "body");
 
-            // Different top-level references
-            Assert.AreNotSame(original, clone);
+        await _sut.ConfigureAndSend(msg, Environments.Dev);
 
-            // Value-type field copied by value
-            Assert.AreEqual(30, clone.Age);
-            clone.Age = 31;
-            Assert.AreEqual(30, original.Age, "Changing clone value-type should not affect original");
-
-            // Reference-type field shared
-            Assert.AreSame(original.Address, clone.Address, "Address should be the same instance (shallow)");
-            clone.Address.City = "Manchester";
-            Assert.AreEqual("Manchester", original.Address.City, "Changing shared reference affects both");
-
-            // String property (reference type but immutable) value equality
-            Assert.AreEqual("Sam", clone.Name);
-            clone.Name = "Alex";
-            Assert.AreEqual("Sam", original.Name, "Changing string ref to a new string should not affect original");
-        }
-
-        [Test]
-        public void ShallowClone_CopiesPrivateAndReadonlyFields()
-        {
-            var original = new Person();
-            var originalId = original.Id;
-            var originalSecret = original.GetSecret();
-
-            var clone = original.ShallowClone();
-
-            // readonly field copied
-            Assert.AreEqual(originalId, clone.Id);
-
-            // private field copied (accessible via method)
-            Assert.AreEqual(originalSecret, clone.GetSecret());
-
-            // Mutating clone’s private field doesn’t change original (because top-level object is distinct)
-            clone.SetSecret("changed");
-            Assert.AreEqual("shh", original.GetSecret());
-            Assert.AreEqual("changed", clone.GetSecret());
-        }
-
-        [Test]
-        public void ShallowClone_WorksForSealedTypes_AndSharesInnerCollections()
-        {
-            var original = new SealedType();
-            var clone = original.ShallowClone();
-
-            Assert.AreNotSame(original, clone);
-            Assert.AreEqual(original.Count, clone.Count);
-
-            // Same inner list instance
-            Assert.AreSame(original.Numbers, clone.Numbers);
-
-            // Mutate shared list via clone, reflected in original
-            clone.Numbers.Add(4);
-            Assert.AreEqual(4, original.Count);
-        }
-
-        [Test]
-        public void ShallowClone_RespectsRuntimeType_WhenVariableIsBaseClass()
-        {
-            Animal animal = new Dog { Species = "Canine", Breed = "Collie" };
-            var clonedAsBase = animal.ShallowClone(); // T inferred as Animal
-
-            // Still a Dog at runtime
-            Assert.IsInstanceOf<Dog>(clonedAsBase);
-            var dog = (Dog)clonedAsBase;
-
-            Assert.AreEqual("Canine", dog.Species);
-            Assert.AreEqual("Collie", dog.Breed);
-        }
-
-        [Test]
-        public void ShallowClone_ArraysAndLists_AreSharedReferences()
-        {
-            var original = new
-            {
-                Numbers = new List<int> { 1, 2, 3 },
-                Arr = new[] { "a", "b" }
-            };
-
-            var clone = original.ShallowClone();
-
-            // Anonymous type: shallow clone gives another instance with same field refs
-            Assert.AreNotSame(original, clone);
-
-            // Lists/arrays share the same reference
-            Assert.AreSame(original.Numbers, clone.Numbers);
-            Assert.AreSame(original.Arr, clone.Arr);
-
-            // Mutations reflect across both
-            clone.Numbers.Add(4);
-            Assert.AreEqual(4, original.Numbers.Count);
-
-            clone.Arr[0] = "z";
-            Assert.AreEqual("z", original.Arr[0]);
-        }
+        // Adjust this if you *intend* the double-send behavior.
+        _client.Verify(c => c.SendMailAsync(It.IsAny<MailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }
