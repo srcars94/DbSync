@@ -1,0 +1,57 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ViewEngines;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.AspNetCore.Http;
+using System.IO;
+using System.Threading.Tasks;
+
+public class ViewRenderService
+{
+    private readonly IRazorViewEngine _viewEngine;
+    private readonly ITempDataProvider _tempDataProvider;
+    private readonly IServiceProvider _serviceProvider;
+
+    public ViewRenderService(
+        IRazorViewEngine viewEngine,
+        ITempDataProvider tempDataProvider,
+        IServiceProvider serviceProvider)
+    {
+        _viewEngine = viewEngine;
+        _tempDataProvider = tempDataProvider;
+        _serviceProvider = serviceProvider;
+    }
+
+    public async Task<string> RenderToStringAsync(ControllerContext controllerContext, string viewName, object model)
+    {
+        var actionContext = controllerContext ?? throw new ArgumentNullException(nameof(controllerContext));
+
+        var viewResult = _viewEngine.FindView(actionContext, viewName, isMainPage: false);
+        if (viewResult.View == null)
+        {
+            throw new InvalidOperationException($"View '{viewName}' not found.");
+        }
+
+        await using var sw = new StringWriter();
+
+        var viewDictionary = new ViewDataDictionary(
+            new EmptyModelMetadataProvider(),
+            new ModelStateDictionary())
+        {
+            Model = model
+        };
+
+        var viewContext = new ViewContext(
+            actionContext,
+            viewResult.View,
+            viewDictionary,
+            new TempDataDictionary(actionContext.HttpContext, _tempDataProvider),
+            sw,
+            new HtmlHelperOptions()
+        );
+
+        await viewResult.View.RenderAsync(viewContext);
+        return sw.ToString();
+    }
+}
