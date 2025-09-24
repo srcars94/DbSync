@@ -1,129 +1,64 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.ViewEngines;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using System.IO;
-using System.Net.Mail;
-using System.Threading;
 using System.Threading.Tasks;
-using Moq;
-using NUnit.Framework;
 
-[TestFixture]
-public class SmtpEmailClientConfigurationTests
+public interface IViewRenderService
 {
-    private Mock<IConfigurationHandler<EmailSettings>> _cfg;
-    private Mock<ISmtpClientGenerator> _generator;
-    private Mock<ISmtpClient> _client;
+    Task<string> RenderToStringAsync(string viewName, object model = null, bool isMainPage = false);
+}
 
-    private SmtpEmailClientConfiguration _sut; // your class under test
+public class ViewRenderService : IViewRenderService
+{
+    private readonly IRazorViewEngine _viewEngine;
+    private readonly ITempDataProvider _tempDataProvider;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly IActionContextAccessor _actionContextAccessor;
 
-    [SetUp]
-    public void SetUp()
+    public ViewRenderService(
+        IRazorViewEngine viewEngine,
+        ITempDataProvider tempDataProvider,
+        IServiceProvider serviceProvider,
+        IActionContextAccessor actionContextAccessor)
     {
-        _cfg = new Mock<IConfigurationHandler<EmailSettings>>();
-        _generator = new Mock<ISmtpClientGenerator>();
-        _client = new Mock<ISmtpClient>();
-
-        _generator.Setup(g => g.GenerateClient()).Returns(_client.Object);
-
-        _sut = new SmtpEmailClientConfiguration(_cfg.Object, _generator.Object);
+        _viewEngine = viewEngine;
+        _tempDataProvider = tempDataProvider;
+        _serviceProvider = serviceProvider;
+        _actionContextAccessor = actionContextAccessor;
     }
 
-    [Test]
-    public async Task ConfigureAndSend_UsesPickup_DropsFileAndSendsOnce()
+    public async Task<string> RenderToStringAsync(string viewName, object model = null, bool isMainPage = false)
     {
-        // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "test-emails-" + Path.GetRandomFileName());
-        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
+        var actionContext = _actionContextAccessor.ActionContext 
+                            ?? throw new InvalidOperationException("No ActionContext available.");
+
+        var viewResult = _viewEngine.FindView(actionContext, viewName, isMainPage);
+
+        if (!viewResult.Success)
+            throw new FileNotFoundException($"View '{viewName}' not found.");
+
+        using var sw = new StringWriter();
+
+        var viewDictionary = new ViewDataDictionary(new EmptyModelMetadataProvider(), new ModelStateDictionary())
         {
-            UseLocalPickupDirectory = true,
-            LocalEmailDirectory = tempDir
-        });
+            Model = model
+        };
 
-        using var msg = new MailMessage("from@x.com", "to@x.com", "subj", "body");
+        var tempData = new TempDataDictionary(actionContext.HttpContext, _tempDataProvider);
 
-        // Act
-        await _sut.ConfigureAndSend(msg, environment: "Local"); // not Dev/Uat/Demo/Prod so only pickup branch
+        var viewContext = new ViewContext(
+            actionContext,
+            viewResult.View,
+            viewDictionary,
+            tempData,
+            sw,
+            new HtmlHelperOptions()
+        );
 
-        // Assert
-        Assert.That(Directory.Exists(tempDir), Is.True, "Pickup directory should be created.");
-        _generator.Verify(g => g.GenerateClient(), Times.Once);
-        _client.Verify(c => c.SendMailAsync(It.IsAny<MailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
+        await viewResult.View.RenderAsync(viewContext);
 
-    [Test]
-    public async Task ConfigureAndSend_DevEnvironment_SendsOnce_NoPickup()
-    {
-        // Arrange
-        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
-        {
-            UseLocalPickupDirectory = false
-        });
-
-        using var msg = new MailMessage("from@x.com", "dev@myCompany.com", "dev-subj", "body");
-
-        // Act
-        await _sut.ConfigureAndSend(msg, Environments.Dev);
-
-        // Assert
-        _generator.Verify(g => g.GenerateClient(), Times.Once);
-        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [TestCase(Environments.Uat)]
-    [TestCase(Environments.Demo)]
-    public async Task ConfigureAndSend_UatOrDemo_SendsOnce_NoPickup(string env)
-    {
-        // Arrange
-        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
-        {
-            UseLocalPickupDirectory = false
-        });
-
-        using var msg = new MailMessage("from@x.com", "qa@theCompany.com", "uat/demo", "body");
-
-        // Act
-        await _sut.ConfigureAndSend(msg, env);
-
-        // Assert
-        _generator.Verify(g => g.GenerateClient(), Times.Once);
-        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Test]
-    public async Task ConfigureAndSend_Prod_SendsOnce_NoPickup()
-    {
-        // Arrange
-        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
-        {
-            UseLocalPickupDirectory = false
-        });
-
-        using var msg = new MailMessage("from@x.com", "ops@theCompany.com", "prod", "body");
-
-        // Act
-        await _sut.ConfigureAndSend(msg, Environments.Prod);
-
-        // Assert
-        _generator.Verify(g => g.GenerateClient(), Times.Once);
-        _client.Verify(c => c.SendMailAsync(msg, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Test]
-    public async Task ConfigureAndSend_Pickup_Then_Dev_WouldDoubleSend_IfNoEarlyReturn()
-    {
-        // This test documents the potential double-send.
-        // If you KEEP the early return, set expectedCalls = 1.
-        // If you REMOVE the early return, set expectedCalls = 2 and use environment=Dev.
-        var tempDir = Path.Combine(Path.GetTempPath(), "test-emails-" + Path.GetRandomFileName());
-        _cfg.Setup(c => c.GetConfiguration()).Returns(new EmailSettings
-        {
-            UseLocalPickupDirectory = true,
-            LocalEmailDirectory = tempDir
-        });
-
-        using var msg = new MailMessage("from@x.com", "to@x.com", "subj", "body");
-
-        await _sut.ConfigureAndSend(msg, Environments.Dev);
-
-        // Adjust this if you *intend* the double-send behavior.
-        _client.Verify(c => c.SendMailAsync(It.IsAny<MailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        return sw.ToString();
     }
 }
