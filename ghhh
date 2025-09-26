@@ -1,0 +1,87 @@
+// NotificationKit.cs
+// .NET 8 / ASP.NET Core MVC
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using System.Text.Json;
+
+namespace YourApp.Web.Notifications
+{
+    public enum NotificationType { Info, Success, Warning, Error }
+
+    public sealed class Notification
+    {
+        public NotificationType Type { get; init; }
+        public string Title { get; init; } = string.Empty;
+        public string Details { get; init; } = string.Empty;
+    }
+
+    // ---- TempData JSON helpers (so TempData can store complex types) ----
+    internal static class TempDataJsonExtensions
+    {
+        public static void Put<T>(this ITempDataDictionary tempData, string key, T value)
+            => tempData[key] = JsonSerializer.Serialize(value);
+
+        public static T? Get<T>(this ITempDataDictionary tempData, string key)
+            => tempData.TryGetValue(key, out var o) && o is string s
+               ? JsonSerializer.Deserialize<T>(s)
+               : default;
+
+        public static T? PeekObj<T>(this ITempDataDictionary tempData, string key)
+            => tempData.Peek(key) is string s
+               ? JsonSerializer.Deserialize<T>(s)
+               : default;
+    }
+
+    // ---- Notification API (TempData-backed; per-request, no statics) ----
+    public static class Notifications
+    {
+        private const string Key = "__Notifications";
+
+        public static void Add(this ITempDataDictionary tempData,
+            NotificationType type, string title, string details)
+        {
+            var list = tempData.PeekObj<List<Notification>>(Key) ?? new List<Notification>();
+            list.Add(new Notification { Type = type, Title = title, Details = details });
+            tempData.Put(Key, list);
+        }
+
+        public static List<Notification> GetAll(this ITempDataDictionary tempData)
+            => tempData.PeekObj<List<Notification>>(Key) ?? new List<Notification>();
+
+        public static void Clear(this ITempDataDictionary tempData) => tempData.Remove(Key);
+    }
+
+    // ---- Base controller you can inherit everywhere ----
+    public abstract class AppControllerBase : Controller
+    {
+        // Old: Notification.Add(this.ControllerContext, NotificationType.Success, title, details)
+        // New:
+        protected void NotifySuccess(string title, string details = "") =>
+            TempData.Add(NotificationType.Success, title, details);
+
+        protected void NotifyInfo(string title, string details = "") =>
+            TempData.Add(NotificationType.Info, title, details);
+
+        protected void NotifyWarning(string title, string details = "") =>
+            TempData.Add(NotificationType.Warning, title, details);
+
+        protected void NotifyError(string title, string details = "") =>
+            TempData.Add(NotificationType.Error, title, details);
+
+        // Optional helper if you want to turn ModelState errors into one error notif
+        protected void NotifyModelErrors(string? title = "Validation error")
+        {
+            var details = string.Join("; ",
+                ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value" : e.ErrorMessage));
+
+            if (!string.IsNullOrWhiteSpace(details))
+                NotifyError(title!, details);
+        }
+
+        // If you ever want to read them in an action/view:
+        protected IReadOnlyList<Notification> CurrentNotifications =>
+            TempData.GetAll();
+    }
+}
