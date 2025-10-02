@@ -1,39 +1,48 @@
 using AutoMapper;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-var scopeFactory = app.Services.GetRequiredService<IServiceScopeFactory>();
-using (var scope = scopeFactory.CreateScope())
+namespace YourApp.Infrastructure.AutoMapper
 {
-    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
-                                      .CreateLogger("AutoMapperValidation");
-    var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
-
-    try
+    public static class AutoMapperValidator
     {
-        // Validates all maps eagerly
-        cfg.AssertConfigurationIsValid();
-    }
-    catch (AutoMapperConfigurationException ex)
-    {
-        foreach (var err in ex.Errors)
+        public static void Validate(IServiceProvider services)
         {
-            logger.LogError(
-                "AutoMapper error: {Message}\n  Profile: {Profile}\n  Map: {Src} -> {Dest}\n  MemberPath: {Member}",
-                err.ErrorMessage,
-                err.TypeMap?.Profile?.ProfileName,
-                err.Types?.SourceType,
-                err.Types?.DestinationType,
-                err.MemberPath
-            );
-        }
+            using var scope = services.CreateScope();
+            var logger = scope.ServiceProvider
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AutoMapperValidation");
 
-        // Optional: also log all loaded profiles
-        if (cfg is MapperConfiguration mc)
-        {
-            var profiles = string.Join(", ", mc.Profiles.Select(p => p.ProfileName));
-            logger.LogError("Loaded profiles: {Profiles}", profiles);
-        }
+            var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
 
-        throw; // keep the failure so you see it in the browser
+            try
+            {
+                cfg.AssertConfigurationIsValid();
+                logger.LogInformation("✅ AutoMapper configuration is valid.");
+            }
+            catch (AutoMapperConfigurationException ex)
+            {
+                foreach (var err in ex.Errors)
+                {
+                    logger.LogError(
+                        "❌ AutoMapper error: {Message}\n  Profile: {Profile}\n  Map: {Src} -> {Dest}\n  MemberPath: {Member}",
+                        err.ErrorMessage,
+                        err.TypeMap?.Profile?.ProfileName,
+                        err.Types?.SourceType,
+                        err.Types?.DestinationType,
+                        err.MemberPath
+                    );
+                }
+
+                // Optional: list loaded profiles
+                if (cfg is MapperConfiguration mc)
+                {
+                    var profiles = string.Join(", ", mc.Profiles.Select(p => p.ProfileName));
+                    logger.LogError("Loaded profiles: {Profiles}", profiles);
+                }
+
+                throw; // rethrow so app still fails fast
+            }
+        }
     }
 }
