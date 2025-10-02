@@ -22,26 +22,27 @@ namespace YourApp.Infrastructure.AutoMapper
             }
             catch (AutoMapperConfigurationException ex)
             {
-                foreach (var err in ex.Errors)
+                foreach (var typeMapError in ex.Errors)
                 {
+                    var typeMap = typeMapError.TypeMap;
+
                     logger.LogError(
-                        "❌ AutoMapper error: {Message}\n  Profile: {Profile}\n  Map: {Src} -> {Dest}\n  MemberPath: {Member}",
-                        err.ErrorMessage,
-                        err.TypeMap?.Profile?.ProfileName,
-                        err.Types?.SourceType,
-                        err.Types?.DestinationType,
-                        err.MemberPath
+                        "❌ AutoMapper error in Profile '{Profile}': {Src} -> {Dest}. Unmapped properties: {Props}",
+                        typeMap?.Profile?.ProfileName,
+                        typeMap?.SourceType,
+                        typeMap?.DestinationType,
+                        string.Join(", ", typeMapError.UnmappedPropertyNames ?? Array.Empty<string>())
                     );
                 }
 
-                // Optional: list loaded profiles
+                // Optional: also log loaded profiles for debugging
                 if (cfg is MapperConfiguration mc)
                 {
                     var profiles = string.Join(", ", mc.Profiles.Select(p => p.ProfileName));
-                    logger.LogError("Loaded profiles: {Profiles}", profiles);
+                    logger.LogError("Loaded AutoMapper profiles: {Profiles}", profiles);
                 }
 
-                throw; // rethrow so app still fails fast
+                throw; // still fail fast so bad maps don’t go unnoticed
             }
         }
     }
