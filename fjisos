@@ -2,48 +2,47 @@ using AutoMapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace YourApp.Infrastructure.AutoMapper
+namespace YourApp.Infrastructure.AutoMapper;
+
+public static class AutoMapperValidator
 {
-    public static class AutoMapperValidator
+    public static void Validate(IServiceProvider services)
     {
-        public static void Validate(IServiceProvider services)
+        using var scope = services.CreateScope();
+        var logger = scope.ServiceProvider
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("AutoMapperValidation");
+
+        var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
+
+        try
         {
-            using var scope = services.CreateScope();
-            var logger = scope.ServiceProvider
-                .GetRequiredService<ILoggerFactory>()
-                .CreateLogger("AutoMapperValidation");
-
-            var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
-
-            try
+            cfg.AssertConfigurationIsValid();
+            logger.LogInformation("✅ AutoMapper configuration is valid.");
+        }
+        catch (AutoMapperConfigurationException ex)
+        {
+            foreach (var typeMapError in ex.Errors)
             {
-                cfg.AssertConfigurationIsValid();
-                logger.LogInformation("✅ AutoMapper configuration is valid.");
+                var tm = typeMapError.TypeMap;
+                logger.LogError(
+                    "❌ AutoMapper error in Profile '{Profile}': {Src} -> {Dest}. Unmapped properties: {Props}",
+                    tm?.Profile?.ProfileName,
+                    tm?.SourceType,
+                    tm?.DestinationType,
+                    string.Join(", ", typeMapError.UnmappedPropertyNames ?? Array.Empty<string>())
+                );
             }
-            catch (AutoMapperConfigurationException ex)
-            {
-                foreach (var typeMapError in ex.Errors)
-                {
-                    var typeMap = typeMapError.TypeMap;
 
-                    logger.LogError(
-                        "❌ AutoMapper error in Profile '{Profile}': {Src} -> {Dest}. Unmapped properties: {Props}",
-                        typeMap?.Profile?.ProfileName,
-                        typeMap?.SourceType,
-                        typeMap?.DestinationType,
-                        string.Join(", ", typeMapError.UnmappedPropertyNames ?? Array.Empty<string>())
-                    );
-                }
+            // Get profile names via the interface (explicit implementation)
+            var profiles = cfg.GetAllTypeMaps()   // <-- use IConfigurationProvider
+                              .Select(tm => tm.Profile?.ProfileName)
+                              .Where(n => !string.IsNullOrWhiteSpace(n))
+                              .Distinct();
 
-                // Optional: also log loaded profiles for debugging
-                if (cfg is MapperConfiguration mc)
-                {
-                    var profiles = string.Join(", ", mc.Profiles.Select(p => p.ProfileName));
-                    logger.LogError("Loaded AutoMapper profiles: {Profiles}", profiles);
-                }
+            logger.LogError("Loaded AutoMapper profiles: {Profiles}", string.Join(", ", profiles));
 
-                throw; // still fail fast so bad maps don’t go unnoticed
-            }
+            throw; // fail fast
         }
     }
 }
