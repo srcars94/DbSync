@@ -1,57 +1,76 @@
-// File: Infrastructure/AutoMapper/AutoMapperDiagnostics.cs
-using AutoMapper;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 
-namespace YourApp.Infrastructure.AutoMapper;
-
-public static class AutoMapperDiagnostics
+namespace Quoting.UI.Helpers
 {
-    /// <summary>Validate all maps at startup and log useful detail if anything is wrong.</summary>
-    public static void ValidateAll(IServiceProvider services)
+    public static class JsonDocHelper
     {
-        using var scope = services.CreateScope();
-        var sp = scope.ServiceProvider;
-
-        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AutoMapper");
-        var cfg    = sp.GetRequiredService<IConfigurationProvider>();   // v14: this is Mapper.ConfigurationProvider
-
-        try
+        public static string EscapeJson(string json)
         {
-            cfg.AssertConfigurationIsValid();                           // validate everything
-            logger.LogInformation("✅ AutoMapper configuration is valid.");
+            if (string.IsNullOrEmpty(json)) return "";
+            return json.Replace("\\", "\\\\")
+                       .Replace("\"", "\\\"")
+                       .Replace("\n", "\\n")
+                       .Replace("\t", "\\t")
+                       .Replace("<", "&lt;")
+                       .Replace(">", "&gt;");
         }
-        catch (AutoMapperConfigurationException ex)
-        {
-            // v14: ex.Errors => IEnumerable<TypeMapConfigErrors>
-            foreach (var mapError in ex.Errors)
-            {
-                var tm = mapError.TypeMap;
-                var profile = tm?.Profile?.ProfileName ?? "(unknown)";
-                var src  = tm?.SourceType?.FullName ?? "(null)";
-                var dest = tm?.DestinationType?.FullName ?? "(null)";
-                var unmapped = string.Join(", ", mapError.UnmappedPropertyNames ?? Array.Empty<string>());
 
-                logger.LogError("❌ Map error in Profile '{Profile}': {Src} -> {Dest}. Unmapped: {Unmapped}",
-                    profile, src, dest, string.IsNullOrWhiteSpace(unmapped) ? "(none)" : unmapped);
+        public static string CreateJsonBlob(IList<AmadeusDocumentType> docs)
+        {
+            var sb = new StringBuilder();
+            sb.Append("{ \"contents\" : [");
+            sb.Append(RecurseJson(docs));
+            sb.Append("] }");
+            return sb.ToString();
+        }
+
+        private static string RecurseJson(IList<AmadeusDocumentType> docs)
+        {
+            if (docs == null || docs.Count == 0) return "";
+
+            var sb = new StringBuilder();
+
+            foreach (var amaDoc in docs)
+            {
+                bool hasChildren = amaDoc.ChildAmadeusDocumentTypes != null
+                                   && amaDoc.ChildAmadeusDocumentTypes.Any();
+
+                sb.Append("{");
+                sb.AppendFormat("\"breadcrumb\": \"{0}\",", amaDoc.FolderBreadcrumb);
+                sb.Append("\"files\": [");
+
+                foreach (var file in amaDoc.Documents)
+                {
+                    sb.Append("{");
+                    sb.AppendFormat("\"id\": \"{0}\",", file.AmadeusDocumentId);
+                    sb.AppendFormat("\"name\": \"{0}\",", EscapeJson(file.FileName));
+                    sb.AppendFormat("\"created\": \"{0}\",", file.CreateDateString);
+                    sb.AppendFormat("\"by\": \"{0}\",", file.CreatedByUserNameLessDomain);
+                    sb.AppendFormat("\"notes\": \"{0}\"", EscapeJson(file.Comment));
+                    sb.Append("},");
+                }
+
+                if (amaDoc.Documents.Any())
+                    sb.Length--; // remove last comma
+
+                sb.Append("]");
+
+                if (hasChildren)
+                {
+                    sb.Append(", \"children\": [");
+                    sb.Append(RecurseJson(amaDoc.ChildAmadeusDocumentTypes));
+                    sb.Append("]");
+                }
+
+                sb.Append("},");
             }
 
-            // List loaded profiles from DI (works reliably in v14 with AddAutoMapper)
-            var profileNames = sp.GetServices<Profile>()
-                                 .Select(p => p.ProfileName)
-                                 .Distinct()
-                                 .OrderBy(n => n);
-            logger.LogError("Loaded AutoMapper profiles: {Profiles}", string.Join(", ", profileNames));
+            if (sb.Length > 0)
+                sb.Length--; // remove last comma
 
-            throw; // keep failing fast
+            return sb.ToString();
         }
-    }
-
-    /// <summary>Validate only a specific profile (handy while iterating).</summary>
-    public static void ValidateProfile<TProfile>(IServiceProvider services) where TProfile : Profile
-    {
-        using var scope = services.CreateScope();
-        var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
-        cfg.AssertConfigurationIsValid(typeof(TProfile));               // v14 supports Type overload
     }
 }
