@@ -1,48 +1,57 @@
+// File: Infrastructure/AutoMapper/AutoMapperDiagnostics.cs
 using AutoMapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace YourApp.Infrastructure.AutoMapper;
 
-public static class AutoMapperValidator
+public static class AutoMapperDiagnostics
 {
-    public static void Validate(IServiceProvider services)
+    /// <summary>Validate all maps at startup and log useful detail if anything is wrong.</summary>
+    public static void ValidateAll(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var logger = scope.ServiceProvider
-            .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("AutoMapperValidation");
+        var sp = scope.ServiceProvider;
 
-        var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("AutoMapper");
+        var cfg    = sp.GetRequiredService<IConfigurationProvider>();   // v14: this is Mapper.ConfigurationProvider
 
         try
         {
-            cfg.AssertConfigurationIsValid();
+            cfg.AssertConfigurationIsValid();                           // validate everything
             logger.LogInformation("✅ AutoMapper configuration is valid.");
         }
         catch (AutoMapperConfigurationException ex)
         {
-            foreach (var typeMapError in ex.Errors)
+            // v14: ex.Errors => IEnumerable<TypeMapConfigErrors>
+            foreach (var mapError in ex.Errors)
             {
-                var tm = typeMapError.TypeMap;
-                logger.LogError(
-                    "❌ AutoMapper error in Profile '{Profile}': {Src} -> {Dest}. Unmapped properties: {Props}",
-                    tm?.Profile?.ProfileName,
-                    tm?.SourceType,
-                    tm?.DestinationType,
-                    string.Join(", ", typeMapError.UnmappedPropertyNames ?? Array.Empty<string>())
-                );
+                var tm = mapError.TypeMap;
+                var profile = tm?.Profile?.ProfileName ?? "(unknown)";
+                var src  = tm?.SourceType?.FullName ?? "(null)";
+                var dest = tm?.DestinationType?.FullName ?? "(null)";
+                var unmapped = string.Join(", ", mapError.UnmappedPropertyNames ?? Array.Empty<string>());
+
+                logger.LogError("❌ Map error in Profile '{Profile}': {Src} -> {Dest}. Unmapped: {Unmapped}",
+                    profile, src, dest, string.IsNullOrWhiteSpace(unmapped) ? "(none)" : unmapped);
             }
 
-            // Get profile names via the interface (explicit implementation)
-            var profiles = cfg.GetAllTypeMaps()   // <-- use IConfigurationProvider
-                              .Select(tm => tm.Profile?.ProfileName)
-                              .Where(n => !string.IsNullOrWhiteSpace(n))
-                              .Distinct();
+            // List loaded profiles from DI (works reliably in v14 with AddAutoMapper)
+            var profileNames = sp.GetServices<Profile>()
+                                 .Select(p => p.ProfileName)
+                                 .Distinct()
+                                 .OrderBy(n => n);
+            logger.LogError("Loaded AutoMapper profiles: {Profiles}", string.Join(", ", profileNames));
 
-            logger.LogError("Loaded AutoMapper profiles: {Profiles}", string.Join(", ", profiles));
-
-            throw; // fail fast
+            throw; // keep failing fast
         }
+    }
+
+    /// <summary>Validate only a specific profile (handy while iterating).</summary>
+    public static void ValidateProfile<TProfile>(IServiceProvider services) where TProfile : Profile
+    {
+        using var scope = services.CreateScope();
+        var cfg = scope.ServiceProvider.GetRequiredService<IConfigurationProvider>();
+        cfg.AssertConfigurationIsValid(typeof(TProfile));               // v14 supports Type overload
     }
 }
