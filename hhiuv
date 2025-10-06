@@ -1,0 +1,39 @@
+using System.Linq.Expressions;
+using Microsoft.AspNetCore.Html;
+using Microsoft.AspNetCore.Mvc.Rendering;
+
+namespace YourApp.Helpers
+{
+    public static class HtmlExtensions
+    {
+        public static IHtmlContent CheckBoxListFor<TModel, TProperty>(
+            this IHtmlHelper<TModel> htmlHelper,
+            Expression<Func<TModel, IEnumerable<TProperty>>> expression,
+            IEnumerable<SelectListItem> items,
+            object htmlAttributes = null)
+        {
+            var sb = new System.Text.StringBuilder();
+            var name = htmlHelper.NameFor(expression).ToString();
+            var attrs = HtmlHelper.AnonymousObjectToHtmlAttributes(htmlAttributes ?? new { });
+
+            // base attributes string
+            string baseAttrString = string.Join(" ",
+                attrs.Select(a => $"{a.Key}=\"{a.Value}\""));
+
+            foreach (var item in items)
+            {
+                var id = $"{name}_{item.Value}";
+                bool isChecked = item.Selected;
+
+                sb.Append("<div class='form-check'>");
+                sb.Append($"<input type='checkbox' " +
+                          $"id='{id}' name='{name}' value='{item.Value}' " +
+                          $"{baseAttrString} {(isChecked ? "checked='checked'" : "")} />");
+                sb.Append($"<label class='form-check-label' for='{id}'>{item.Text}</label>");
+                sb.Append("</div>");
+            }
+
+            return new HtmlString(sb.ToString());
+        }
+    }
+}
