@@ -1,0 +1,32 @@
+// --- Namespace bootstrap (runs first) ---
+(function (w) {
+  // Root objects
+  const BP = (w.BusinessPortals = w.BusinessPortals || {});
+  w.businessPortals = w.businessPortals || BP; // lowercase alias some old code uses
+
+  function makeNS(path) {
+    if (!path) return BP;
+    return path.split('.').reduce((obj, key) => (obj[key] = obj[key] || {}), w);
+  }
+
+  // Support BOTH spellings used across the codebase
+  BP.createNamespace = BP.createNamespace || makeNS;
+  BP.CreateNamespace = BP.CreateNamespace || makeNS;
+
+  // Pre-create common trees (optional)
+  makeNS('BusinessPortals');
+  makeNS('BusinessPortals.Quoting');
+  makeNS('BusinessPortals.Quoting.UI');
+  makeNS('BusinessPortals.Quoting.UI.Master');
+  makeNS('BusinessPortals.Quoting.UI.Master.Areas');
+  makeNS('BusinessPortals.Utility');
+  makeNS('BusinessPortals.Utility.Notify');
+})(window);
+
+// jQuery globals next
+import * as jq from 'jquery';
+const jQ = jq.default || jq;
+window.jQuery = window.$ = window.jquery = jQ;
+
+// Plugins after jQuery globals
+import 'mark.js/dist/jquery.mark.js';
