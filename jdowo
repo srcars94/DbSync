@@ -1,0 +1,36 @@
+using Newtonsoft.Json;
+
+public static class JsonSafe
+{
+    public static T? DeserializeOrDefault<T>(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return default;
+
+        try
+        {
+            return JsonConvert.DeserializeObject<T>(
+                body,
+                new JsonSerializerSettings { DateParseHandling = DateParseHandling.None }
+            );
+        }
+        catch (JsonReaderException)
+        {
+            // For primitive types like string/int, try plain conversion.
+            if (typeof(T) == typeof(string))
+                return (T)(object)body;
+
+            if (typeof(T) == typeof(int) && int.TryParse(body, out var i))
+                return (T)(object)i;
+
+            if (typeof(T) == typeof(long) && long.TryParse(body, out var l))
+                return (T)(object)l;
+
+            if (typeof(T) == typeof(double) && double.TryParse(body, out var d))
+                return (T)(object)d;
+
+            // Fallback: nothing usable
+            return default;
+        }
+    }
+}
