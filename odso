@@ -1,122 +1,115 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // where DictionaryExtensions lives
+using Quoting.UI.Shared.Extensions; // namespace of EnumerableExtensions
 
 [TestFixture]
-public class DictionaryExtensionsTests
+public class EnumerableExtensionsTests
 {
-    // --- Overload: defaultValue (constant) ---
+    // ---------------- IsNullOrEmpty ----------------
 
     [Test]
-    public void GetValueOrDefaultCustom_ReturnsExistingValue_WhenKeyPresent()
+    public void IsNullOrEmpty_ReturnsTrue_WhenEnumerableIsNull()
     {
-        var dict = new Dictionary<string, int> { ["a"] = 42 };
-
-        var result = dict.GetValueOrDefaultCustom("a", -1);
-
-        Assert.That(result, Is.EqualTo(42));
+        IEnumerable<int> values = null!;
+        Assert.That(values.IsNullOrEmpty(), Is.True);
     }
 
     [Test]
-    public void GetValueOrDefaultCustom_ReturnsDefault_WhenKeyMissing()
+    public void IsNullOrEmpty_ReturnsTrue_WhenEnumerableIsEmpty()
     {
-        var dict = new Dictionary<string, int> { ["a"] = 42 };
-
-        var result = dict.GetValueOrDefaultCustom("missing", -1);
-
-        Assert.That(result, Is.EqualTo(-1));
+        var values = Enumerable.Empty<int>();
+        Assert.That(values.IsNullOrEmpty(), Is.True);
     }
 
-    // --- Overload: defaultValueSelector (Func<TValue>) ---
+    [Test]
+    public void IsNullOrEmpty_ReturnsFalse_WhenEnumerableHasElements()
+    {
+        var values = new[] { 1 };
+        Assert.That(values.IsNullOrEmpty(), Is.False);
+    }
+
+    // ---------------- BitwiseCombine ----------------
 
     [Test]
-    public void GetValueOrDefaultCustom_SelectorUsed_WhenKeyMissing()
+    public void BitwiseCombine_ReturnsZero_WhenNull()
     {
-        var dict = new Dictionary<string, string> { ["k"] = "v" };
-        var selectorCalls = 0;
+        IEnumerable<int> values = null!;
+        var result = values.BitwiseCombine();
+        Assert.That(result, Is.EqualTo(0));
+    }
 
-        string result = dict.GetValueOrDefaultCustom("missing", () =>
+    [Test]
+    public void BitwiseCombine_ReturnsZero_WhenEmpty()
+    {
+        var result = Enumerable.Empty<int>().BitwiseCombine();
+        Assert.That(result, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BitwiseCombine_CombinesValuesWithOrOperator()
+    {
+        var values = new[] { 1, 2, 4 };
+        var result = values.BitwiseCombine();
+        // 1 | 2 | 4 = 7
+        Assert.That(result, Is.EqualTo(7));
+    }
+
+    [Test]
+    public void BitwiseCombine_SingleValue_ReturnsThatValue()
+    {
+        var result = new[] { 8 }.BitwiseCombine();
+        Assert.That(result, Is.EqualTo(8));
+    }
+
+    // ---------------- Next ----------------
+
+    [Test]
+    public void Next_ReturnsDefault_WhenListIsNull()
+    {
+        List<string> list = null!;
+        var result = list.Next("A");
+        Assert.That(result, Is.EqualTo(default(string)));
+    }
+
+    [Test]
+    public void Next_ReturnsDefault_WhenItemNotFound()
+    {
+        var list = new List<string> { "A", "B", "C" };
+        var result = list.Next("Z");
+        Assert.That(result, Is.EqualTo(default(string)));
+    }
+
+    [Test]
+    public void Next_ReturnsNextItem_WhenItemInMiddle()
+    {
+        var list = new List<string> { "A", "B", "C" };
+        var result = list.Next("A");
+        Assert.That(result, Is.EqualTo("B"));
+    }
+
+    [Test]
+    public void Next_ReturnsDefault_WhenItemIsLast()
+    {
+        var list = new List<int> { 10, 20, 30 };
+        var result = list.Next(30);
+        Assert.That(result, Is.EqualTo(default(int)));
+    }
+
+    [Test]
+    public void Next_WorksForReferenceTypes()
+    {
+        var list = new List<Foo>
         {
-            selectorCalls++;
-            return "computed";
-        });
+            new Foo { Id = 1 },
+            new Foo { Id = 2 },
+            new Foo { Id = 3 }
+        };
 
-        Assert.Multiple(() =>
-        {
-            Assert.That(result, Is.EqualTo("computed"));
-            Assert.That(selectorCalls, Is.EqualTo(1), "Selector should be invoked exactly once.");
-        });
+        var result = list.Next(list[1]); // after Id=2
+        Assert.That(result!.Id, Is.EqualTo(3));
     }
-
-    [Test]
-    public void GetValueOrDefaultCustom_SelectorNotInvoked_WhenKeyPresent()
-    {
-        var dict = new Dictionary<string, string> { ["k"] = "v" };
-        var selectorCalls = 0;
-
-        string result = dict.GetValueOrDefaultCustom("k", () =>
-        {
-            selectorCalls++;
-            return "should-not-run";
-        });
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(result, Is.EqualTo("v"));
-            Assert.That(selectorCalls, Is.EqualTo(0), "Selector must not run if key exists.");
-        });
-    }
-
-    // --- Null-guarding ---
-
-    [Test]
-    public void GetValueOrDefaultCustom_Throws_WhenDictionaryNull_ConstantOverload()
-    {
-        IDictionary<string, int> dict = null!;
-
-        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom("a", 0));
-        Assert.That(ex!.ParamName, Is.EqualTo("dictionary"));
-    }
-
-    [Test]
-    public void GetValueOrDefaultCustom_Throws_WhenDictionaryNull_SelectorOverload()
-    {
-        IDictionary<string, int> dict = null!;
-
-        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom("a", () => 0));
-        Assert.That(ex!.ParamName, Is.EqualTo("dictionary"));
-    }
-
-    [Test]
-    public void GetValueOrDefaultCustom_Throws_WhenKeyNull_ConstantOverload()
-    {
-        var dict = new Dictionary<string, int>();
-
-        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom(null!, 0));
-        Assert.That(ex!.ParamName, Is.EqualTo("key"));
-    }
-
-    [Test]
-    public void GetValueOrDefaultCustom_Throws_WhenKeyNull_SelectorOverload()
-    {
-        var dict = new Dictionary<string, int>();
-
-        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom(null!, () => 0));
-        Assert.That(ex!.ParamName, Is.EqualTo("key"));
-    }
-
-    // --- Reference type value (sanity) ---
 
     private sealed class Foo { public int Id { get; init; } }
-
-    [Test]
-    public void GetValueOrDefaultCustom_ReferenceType_DefaultReturnedWhenMissing()
-    {
-        var dict = new Dictionary<int, Foo> { [1] = new Foo { Id = 1 } };
-
-        var result = dict.GetValueOrDefaultCustom(2, new Foo { Id = -1 });
-
-        Assert.That(result.Id, Is.EqualTo(-1));
-    }
 }
