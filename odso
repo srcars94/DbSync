@@ -1,30 +1,148 @@
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Internal;
+using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions;
+using Quoting.UI.Shared.Extensions; // namespace where your code lives
 
 [TestFixture]
-public class UnitConversion_PowerFactor_Tests
+public class HttpRequestUploadExtensionsTests
 {
-    private const decimal PF = 0.95m;
+    private static HttpRequest CreateRequestWithFiles(params (string name, string fileName, string content)[] files)
+    {
+        var request = new DefaultHttpContext().Request;
+
+        var formFiles = new FormFileCollection();
+        foreach (var (name, fileName, content) in files)
+        {
+            var bytes = Encoding.UTF8.GetBytes(content);
+            var stream = new MemoryStream(bytes);
+            formFiles.Add(new FormFile(stream, 0, bytes.Length, name, fileName));
+        }
+
+        request.Form = new FormCollection(new System.Collections.Generic.Dictionary<string, StringValues>(), formFiles);
+        return request;
+    }
+
+    // ------------------ UploadedCount ------------------
 
     [Test]
-    public void ConvertKwToKva_DividesByPowerFactor()
+    public void UploadedCount_ReturnsNumberOfFiles()
     {
-        const decimal kw = 100m;
-        var expected = kw / PF;
+        var request = CreateRequestWithFiles(
+            ("f1", "a.txt", "data1"),
+            ("f2", "b.txt", "data2")
+        );
 
-        var actual = kw.ConvertKwToKva();
+        var count = HttpRequestUploadExtensions.UploadedCount(request);
 
-        Assert.That(actual, Is.EqualTo(expected).Within(0.0001m));
+        Assert.That(count, Is.EqualTo(2));
+    }
+
+    // ------------------ GetUpload ------------------
+
+    [Test]
+    public void GetUpload_ReturnsCorrectFile_ByIndex()
+    {
+        var request = CreateRequestWithFiles(("f1", "a.txt", "data1"), ("f2", "b.txt", "data2"));
+
+        var file = HttpRequestUploadExtensions.GetUpload(request, 1);
+
+        Assert.That(file.FileName, Is.EqualTo("b.txt"));
     }
 
     [Test]
-    public void ConvertKvaToKw_MultipliesByPowerFactor()
+    public void GetUpload_ReturnsNull_WhenIndexOutOfRange()
     {
-        const decimal kva = 100m;
-        var expected = kva * PF;
+        var request = CreateRequestWithFiles(("f1", "a.txt", "data1"));
 
-        var actual = kva.ConvertKvaToKw();
+        var file = HttpRequestUploadExtensions.GetUpload(request, 5);
 
-        Assert.That(actual, Is.EqualTo(expected).Within(0.0001m));
+        Assert.That(file, Is.Null);
+    }
+
+    // ------------------ GetUploads ------------------
+
+    [Test]
+    public void GetUploads_ReturnsAllFiles()
+    {
+        var request = CreateRequestWithFiles(("f1", "a.txt", "x"), ("f2", "b.txt", "y"));
+
+        var files = HttpRequestUploadExtensions.GetUploads(request);
+
+        Assert.That(files, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void GetUploads_ReturnsNull_WhenNoForm()
+    {
+        var request = new DefaultHttpContext().Request;
+
+        var files = HttpRequestUploadExtensions.GetUploads(request);
+
+        Assert.That(files, Is.Null);
+    }
+
+    // ------------------ GetUploadFileName ------------------
+
+    [Test]
+    public void GetUploadFileName_ReturnsExpectedName()
+    {
+        var request = CreateRequestWithFiles(("f1", "abc.txt", "123"));
+
+        var result = HttpRequestUploadExtensions.GetUploadFileName(request);
+
+        Assert.That(result, Is.EqualTo("abc.txt"));
+    }
+
+    // ------------------ GetFileNameWithoutExtension ------------------
+
+    [Test]
+    public void GetFileNameWithoutExtension_StripsExtension()
+    {
+        var request = CreateRequestWithFiles(("f1", "report.pdf", "123"));
+
+        var result = HttpRequestUploadExtensions.GetFileNameWithoutExtension(request);
+
+        Assert.That(result, Is.EqualTo("report"));
+    }
+
+    // ------------------ GetUploadBytesFromRequest ------------------
+
+    [Test]
+    public async Task GetUploadBytesFromRequest_ReturnsExpectedBytes()
+    {
+        var content = "Hello world";
+        var request = CreateRequestWithFiles(("f1", "file.txt", content));
+
+        var bytes = await HttpRequestUploadExtensions.GetUploadBytesFromRequest(request);
+
+        var text = Encoding.UTF8.GetString(bytes!);
+        Assert.That(text, Is.EqualTo(content));
+    }
+
+    [Test]
+    public async Task GetUploadBytesFromRequest_ReturnsNull_WhenNoFile()
+    {
+        var request = new DefaultHttpContext().Request;
+
+        var bytes = await HttpRequestUploadExtensions.GetUploadBytesFromRequest(request);
+
+        Assert.That(bytes, Is.Null);
+    }
+
+    [Test]
+    public async Task GetUploadBytesFromRequest_ReturnsNull_WhenEmptyFile()
+    {
+        var emptyFile = new FormFile(new MemoryStream(), 0, 0, "f1", "empty.txt");
+        var request = new DefaultHttpContext().Request;
+        request.Form = new FormCollection(new System.Collections.Generic.Dictionary<string, StringValues>(),
+            new FormFileCollection { emptyFile });
+
+        var bytes = await HttpRequestUploadExtensions.GetUploadBytesFromRequest(request);
+
+        Assert.That(bytes, Is.Null);
     }
 }
