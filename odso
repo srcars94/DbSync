@@ -1,120 +1,136 @@
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // namespace where UnitConversion.cs lives
+using Quoting.UI.Shared.Extensions; // <-- namespace of UnitConversion.cs
 
 [TestFixture]
 public class UnitConversionTests
 {
-    // Constants from your code
-    private const decimal Factor_SCMH_to_KWh = 35.31m * 1038m / 3412m;
-    private const decimal Factor_KWh_to_SCMH = 3412m / (35.31m * 1038m);
+    // factors as used in your code
+    private const decimal FACTOR_SCMH_TO_KWH = 35.31M * 1038M / 3412M;
+    private const decimal FACTOR_KWH_TO_SCHM = 3412M / (35.31M * 1038M);
 
-    // ------------- ConvertSCMHToKwh (decimal) -------------
+    // ---------- ConvertSCMHtoKwh ----------
 
     [Test]
-    public void ConvertSCMHToKwh_WithDecimal_ReturnsExpectedResult()
+    public void ConvertSCMHtoKwh_decimal_Works()
     {
         const decimal input = 10m;
-        var expected = input * Factor_SCMH_to_KWh;
+        var expected = input * FACTOR_SCMH_TO_KWH;
 
-        var result = input.ConvertSCMHToKwh();
+        var result = input.ConvertSCMHtoKwh();
 
         Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
-    // ------------- ConvertSCMHToKwh (nullable decimal) -------------
-
     [Test]
-    public void ConvertSCMHToKwh_WithNullableDecimal_ReturnsExpectedResult()
+    public void ConvertSCMHtoKwh_nullable_WithValue_Works()
     {
         decimal? input = 5m;
-        var expected = input.Value * Factor_SCMH_to_KWh;
+        var expected = input.Value * FACTOR_SCMH_TO_KWH;
 
-        var result = input.ConvertSCMHToKwh();
+        var result = input.ConvertSCMHtoKwh();
 
         Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
     [Test]
-    public void ConvertSCMHToKwh_WithNullNullable_ReturnsZero()
+    public void ConvertSCMHtoKwh_nullable_Null_ReturnsZero()
     {
         decimal? input = null;
 
-        var result = input.ConvertSCMHToKwh();
+        var result = input.ConvertSCMHtoKwh();
 
         Assert.That(result, Is.EqualTo(0m));
     }
 
-    // ------------- ConvertSCMHToKwh (int) -------------
-
     [Test]
-    public void ConvertSCMHToKwh_WithInt_ReturnsExpectedResult()
+    public void ConvertSCMHtoKwh_int_Works()
     {
         const int input = 12;
-        var expected = input * Factor_SCMH_to_KWh;
+        var expected = input * FACTOR_SCMH_TO_KWH;
 
-        var result = input.ConvertSCMHToKwh();
+        var result = input.ConvertSCMHtoKwh();
 
         Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
-    // ------------- ConvertKWhToSCMH (decimal) -------------
+    // ---------- ConvertKwhToSCHM ----------
 
     [Test]
-    public void ConvertKWhToSCMH_WithDecimal_ReturnsExpectedResult()
+    public void ConvertKwhToSCHM_decimal_Works()
     {
         const decimal input = 100m;
-        var expected = input * Factor_KWh_to_SCMH;
+        var expected = input * FACTOR_KWH_TO_SCHM;
 
-        var result = input.ConvertKWhToSCMH();
+        var result = input.ConvertKwhToSCHM();
 
         Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
-    // ------------- ConvertKWhToSCMH (nullable decimal) -------------
-
     [Test]
-    public void ConvertKWhToSCMH_WithNullableDecimal_ReturnsExpectedResult()
+    public void ConvertKwhToSCHM_nullable_WithValue_Works()
     {
         decimal? input = 50m;
-        var expected = input.Value * Factor_KWh_to_SCMH;
+        var expected = input.Value * FACTOR_KWH_TO_SCHM;
 
-        var result = input.ConvertKWhToSCMH();
+        var result = input.ConvertKwhToSCHM();
 
         Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
     [Test]
-    public void ConvertKWhToSCMH_WithNullNullable_ReturnsZero()
+    public void ConvertKwhToSCHM_nullable_Null_ReturnsZero()
     {
         decimal? input = null;
 
-        var result = input.ConvertKWhToSCMH();
+        var result = input.ConvertKwhToSCHM();
 
         Assert.That(result, Is.EqualTo(0m));
     }
 
-    // ------------- ConvertKwToKwh -------------
+    [Test]
+    public void ConvertKwhToSCHM_int_Works()
+    {
+        const int input = 7;
+        var expected = input * FACTOR_KWH_TO_SCHM;
+
+        var result = input.ConvertKwhToSCHM();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
+    }
+
+    // ---------- kW / kVA (as per your current code) ----------
 
     [Test]
-    public void ConvertKwToKwh_AppliesEfficiencyFactor()
+    public void ConvertKwToKva_Applies_0p95_Factor()
     {
         const decimal input = 100m;
         var expected = input * 0.95m;
 
-        var result = input.ConvertKwToKwh();
+        var result = input.ConvertKwToKva();
 
         Assert.That(result, Is.EqualTo(expected));
     }
 
-    // ------------- Integration sanity check -------------
+    [Test]
+    public void ConvertKvaToKw_Applies_0p95_Factor()
+    {
+        const decimal input = 100m;
+        var expected = input * 0.95m;
+
+        var result = input.ConvertKvaToKw();
+
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    // ---------- round-trip sanity (SCMH <-> kWh) ----------
 
     [Test]
-    public void RoundTrip_SCMH_To_KWh_And_Back_RestoresValue_WithinTolerance()
+    public void RoundTrip_SCMH_to_kWh_and_back_IsConsistent()
     {
         const decimal scmh = 10m;
 
-        var kwh = scmh.ConvertSCMHToKwh();
-        var scmhBack = kwh.ConvertKWhToSCMH();
+        var kwh = scmh.ConvertSCMHtoKwh();
+        var scmhBack = kwh.ConvertKwhToSCHM();
 
         Assert.That(scmhBack, Is.EqualTo(scmh).Within(0.0001m));
     }
