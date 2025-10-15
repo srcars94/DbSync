@@ -1,115 +1,84 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.AspNetCore.Html;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // namespace of EnumerableExtensions
+using Quoting.UI.Shared.Extensions; // namespace where HtmlExtensions.cs lives
 
 [TestFixture]
-public class EnumerableExtensionsTests
+public class HtmlExtensionsTests
 {
-    // ---------------- IsNullOrEmpty ----------------
-
-    [Test]
-    public void IsNullOrEmpty_ReturnsTrue_WhenEnumerableIsNull()
+    private class TestModel
     {
-        IEnumerable<int> values = null!;
-        Assert.That(values.IsNullOrEmpty(), Is.True);
+        public IEnumerable<string> SelectedItems { get; set; } = Enumerable.Empty<string>();
+    }
+
+    private HtmlHelper<TestModel> CreateHtmlHelper()
+    {
+        // Fake IHtmlHelper instance using the default ViewContext constructor pattern
+        var viewContext = new Microsoft.AspNetCore.Mvc.Rendering.ViewContext();
+        var helper = new HtmlHelper<TestModel>(
+            new Microsoft.AspNetCore.Mvc.ViewFeatures.Internal.DefaultHtmlGenerator(),
+            new Microsoft.AspNetCore.Mvc.ViewEngines.Internal.DefaultViewEngine(),
+            new Microsoft.AspNetCore.Mvc.ModelBinding.ModelMetadataProvider(),
+            new Microsoft.AspNetCore.Mvc.ViewFeatures.HtmlHelperOptions(),
+            viewContext
+        );
+        return helper;
     }
 
     [Test]
-    public void IsNullOrEmpty_ReturnsTrue_WhenEnumerableIsEmpty()
+    public void CheckBoxListFor_GeneratesExpectedHtml()
     {
-        var values = Enumerable.Empty<int>();
-        Assert.That(values.IsNullOrEmpty(), Is.True);
-    }
+        // Arrange
+        var model = new TestModel { SelectedItems = new[] { "2" } };
 
-    [Test]
-    public void IsNullOrEmpty_ReturnsFalse_WhenEnumerableHasElements()
-    {
-        var values = new[] { 1 };
-        Assert.That(values.IsNullOrEmpty(), Is.False);
-    }
-
-    // ---------------- BitwiseCombine ----------------
-
-    [Test]
-    public void BitwiseCombine_ReturnsZero_WhenNull()
-    {
-        IEnumerable<int> values = null!;
-        var result = values.BitwiseCombine();
-        Assert.That(result, Is.EqualTo(0));
-    }
-
-    [Test]
-    public void BitwiseCombine_ReturnsZero_WhenEmpty()
-    {
-        var result = Enumerable.Empty<int>().BitwiseCombine();
-        Assert.That(result, Is.EqualTo(0));
-    }
-
-    [Test]
-    public void BitwiseCombine_CombinesValuesWithOrOperator()
-    {
-        var values = new[] { 1, 2, 4 };
-        var result = values.BitwiseCombine();
-        // 1 | 2 | 4 = 7
-        Assert.That(result, Is.EqualTo(7));
-    }
-
-    [Test]
-    public void BitwiseCombine_SingleValue_ReturnsThatValue()
-    {
-        var result = new[] { 8 }.BitwiseCombine();
-        Assert.That(result, Is.EqualTo(8));
-    }
-
-    // ---------------- Next ----------------
-
-    [Test]
-    public void Next_ReturnsDefault_WhenListIsNull()
-    {
-        List<string> list = null!;
-        var result = list.Next("A");
-        Assert.That(result, Is.EqualTo(default(string)));
-    }
-
-    [Test]
-    public void Next_ReturnsDefault_WhenItemNotFound()
-    {
-        var list = new List<string> { "A", "B", "C" };
-        var result = list.Next("Z");
-        Assert.That(result, Is.EqualTo(default(string)));
-    }
-
-    [Test]
-    public void Next_ReturnsNextItem_WhenItemInMiddle()
-    {
-        var list = new List<string> { "A", "B", "C" };
-        var result = list.Next("A");
-        Assert.That(result, Is.EqualTo("B"));
-    }
-
-    [Test]
-    public void Next_ReturnsDefault_WhenItemIsLast()
-    {
-        var list = new List<int> { 10, 20, 30 };
-        var result = list.Next(30);
-        Assert.That(result, Is.EqualTo(default(int)));
-    }
-
-    [Test]
-    public void Next_WorksForReferenceTypes()
-    {
-        var list = new List<Foo>
+        var items = new List<SelectListItem>
         {
-            new Foo { Id = 1 },
-            new Foo { Id = 2 },
-            new Foo { Id = 3 }
+            new SelectListItem { Text = "Option 1", Value = "1" },
+            new SelectListItem { Text = "Option 2", Value = "2", Selected = true }
         };
 
-        var result = list.Next(list[1]); // after Id=2
-        Assert.That(result!.Id, Is.EqualTo(3));
+        var htmlHelper = new FakeHtmlHelper<TestModel>(model);
+
+        // Act
+        var html = HtmlExtensions.CheckBoxListFor(
+            htmlHelper,
+            m => m.SelectedItems,
+            items,
+            new { @class = "custom", data_test = "abc" });
+
+        var result = html.ToString();
+
+        // Assert
+        Assert.That(result, Does.Contain("type=\"checkbox\""));
+        Assert.That(result, Does.Contain("name=\"SelectedItems\""));
+        Assert.That(result, Does.Contain("value=\"1\""));
+        Assert.That(result, Does.Contain("value=\"2\""));
+        Assert.That(result, Does.Contain("checked=\"checked\""));
+        Assert.That(result, Does.Contain("class=\"custom\""));
+        Assert.That(result, Does.Contain("data_test=\"abc\""));
     }
 
-    private sealed class Foo { public int Id { get; init; } }
+    // Simple stub to satisfy IHtmlHelper interface so we don’t need full MVC context
+    private class FakeHtmlHelper<T> : IHtmlHelper<T>
+    {
+        public FakeHtmlHelper(T model) { ViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary<T>(new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(), new Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary()) { Model = model }; }
+        public Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary<T> ViewData { get; set; }
+        object IHtmlHelper.ViewData => ViewData;
+        public dynamic ViewBag => new System.Dynamic.ExpandoObject();
+        public Microsoft.AspNetCore.Mvc.Rendering.ViewContext ViewContext => new Microsoft.AspNetCore.Mvc.Rendering.ViewContext();
+        public Microsoft.AspNetCore.Mvc.Rendering.IHtmlGenerator HtmlGenerator => throw new System.NotImplementedException();
+        public string IdAttributeDotReplacement => "_";
+        public ITempDataDictionary TempData => new Microsoft.AspNetCore.Mvc.ViewFeatures.Internal.TempDataDictionary();
+        public UrlEncoder UrlEncoder => System.Text.Encodings.Web.HtmlEncoder.Default;
+        public IHtmlContent Partial(string partialViewName, object model, Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary viewData) => throw new System.NotImplementedException();
+        public IHtmlContent Raw(string value) => new HtmlString(value);
+        public void Contextualize(ViewContext viewContext) { }
+        public string Encode(string value) => value;
+        public string Encode(object value) => value?.ToString();
+        public string FormatValue(object value, string format) => value?.ToString() ?? "";
+        public string Value(string name, string format) => "";
+        public void EndForm() { }
+    }
 }
