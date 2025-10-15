@@ -1,143 +1,140 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // Namespace for LinqExtensions.cs
+using Quoting.UI.Shared.Extensions; // Namespace where your StringExtensions.cs is
 
 [TestFixture]
-public class LinqExtensionsTests
+public class StringExtensionsTests
 {
-    // ---------------- SafeAny (with predicate) ----------------
+    // ---------------- TrimStartSafe ----------------
 
     [Test]
-    public void SafeAny_WithPredicate_ReturnsFalse_WhenSourceNull()
+    public void TrimStartSafe_ReturnsEmpty_WhenNullOrWhitespace()
     {
-        IEnumerable<int> source = null!;
-        var result = source.SafeAny(x => x > 0);
-        Assert.That(result, Is.False);
+        Assert.That(((string)null!).TrimStartSafe(), Is.EqualTo(string.Empty));
+        Assert.That("   ".TrimStartSafe(), Is.EqualTo(string.Empty));
     }
 
     [Test]
-    public void SafeAny_WithPredicate_ReturnsFalse_WhenEmpty()
+    public void TrimStartSafe_TrimsSpecifiedCharacters()
     {
-        var source = Enumerable.Empty<int>();
-        var result = source.SafeAny(x => x > 0);
-        Assert.That(result, Is.False);
+        var result = "--Hello".TrimStartSafe('-');
+        Assert.That(result, Is.EqualTo("Hello"));
     }
 
     [Test]
-    public void SafeAny_WithPredicate_ReturnsTrue_WhenMatchExists()
+    public void TrimStartSafe_ReturnsOriginal_WhenNoTrimChars()
     {
-        var source = new[] { 1, 2, 3 };
-        var result = source.SafeAny(x => x > 2);
-        Assert.That(result, Is.True);
+        var result = "Hello".TrimStartSafe();
+        Assert.That(result, Is.EqualTo("Hello"));
     }
 
-    // ---------------- SafeAny (no predicate) ----------------
+    // ---------------- JoinString ----------------
 
     [Test]
-    public void SafeAny_WithoutPredicate_ReturnsFalse_WhenSourceNull()
+    public void JoinString_ReturnsEmpty_WhenListIsNullOrEmpty()
     {
-        IEnumerable<int> source = null!;
-        var result = source.SafeAny();
-        Assert.That(result, Is.False);
-    }
-
-    [Test]
-    public void SafeAny_WithoutPredicate_ReturnsTrue_WhenNotEmpty()
-    {
-        var source = new[] { 1 };
-        var result = source.SafeAny();
-        Assert.That(result, Is.True);
+        IEnumerable<string> nullList = null!;
+        Assert.That(nullList.JoinString(","), Is.EqualTo(string.Empty));
+        Assert.That(new List<string>().JoinString(","), Is.EqualTo(string.Empty));
     }
 
     [Test]
-    public void SafeAny_WithoutPredicate_ReturnsFalse_WhenEmpty()
+    public void JoinString_JoinsValuesWithSeparator()
     {
-        var source = Enumerable.Empty<string>();
-        var result = source.SafeAny();
-        Assert.That(result, Is.False);
+        var list = new[] { "A", "B", "C" };
+        var result = list.JoinString("-");
+        Assert.That(result, Is.EqualTo("A-B-C"));
     }
 
-    // ---------------- WhereToList (IEnumerable<T>) ----------------
+    // ---------------- FormatSenseCheckValue ----------------
+
+    public enum RvLCheckFormatType { YesNo, Bool, Currency }
 
     [Test]
-    public async Task WhereToList_IEnumerable_ReturnsFilteredList()
+    public void FormatSenseCheckValue_YesNo_ReturnsYesOrNo()
     {
-        var source = new[] { 1, 2, 3, 4, 5 };
-        var predicates = new Func<int, bool>[]
+        var resultYes = "".FormatSenseCheckValue(1M, RvLCheckFormatType.YesNo);
+        var resultNo = "".FormatSenseCheckValue(0M, RvLCheckFormatType.YesNo);
+
+        Assert.Multiple(() =>
         {
-            x => x > 2,
-            x => x % 2 == 1
-        };
-
-        var result = await source.WhereToList(predicates);
-
-        Assert.That(result, Is.EqualTo(new[] { 3, 5 }));
+            Assert.That(resultYes, Is.EqualTo("Yes"));
+            Assert.That(resultNo, Is.EqualTo("No"));
+        });
     }
 
-    // ---------------- WhereToList (IQueryable<T>) ----------------
-
     [Test]
-    public async Task WhereToList_IQueryable_ReturnsFilteredList()
+    public void FormatSenseCheckValue_Bool_ReturnsYesOrNo()
     {
-        var source = new List<int> { 1, 2, 3, 4, 5 }.AsQueryable();
-        var predicates = new System.Linq.Expressions.Expression<Func<int, bool>>[]
+        var resultYes = "".FormatSenseCheckValue(1M, RvLCheckFormatType.Bool);
+        var resultNo = "".FormatSenseCheckValue(0M, RvLCheckFormatType.Bool);
+
+        Assert.Multiple(() =>
         {
-            x => x > 2,
-            x => x < 5
-        };
-
-        var result = await source.WhereToList(predicates);
-
-        Assert.That(result, Is.EqualTo(new[] { 3, 4 }));
-    }
-
-    // ---------------- WhereToList (Task<IEnumerable<T>>) ----------------
-
-    [Test]
-    public async Task WhereToList_TaskOfIEnumerable_ReturnsFilteredList()
-    {
-        Task<IEnumerable<int>> task = Task.FromResult<IEnumerable<int>>(new[] { 1, 2, 3, 4 });
-        var predicates = new Func<int, bool>[] { x => x > 1, x => x < 4 };
-
-        var result = await task.WhereToList(predicates);
-
-        Assert.That(result, Is.EqualTo(new[] { 2, 3 }));
-    }
-
-    // ---------------- WhereToList (Task<List<T>>) ----------------
-
-    [Test]
-    public async Task WhereToList_TaskOfList_ReturnsFilteredList()
-    {
-        Task<List<int>> task = Task.FromResult(new List<int> { 1, 2, 3, 4 });
-        var predicates = new Func<int, bool>[] { x => x % 2 == 0 };
-
-        var result = await task.WhereToList(predicates);
-
-        Assert.That(result, Is.EqualTo(new[] { 2, 4 }));
-    }
-
-    // ---------------- WhereToList (List<T>) ----------------
-
-    [Test]
-    public void WhereToList_List_ReturnsFilteredList()
-    {
-        var source = new List<int> { 1, 2, 3, 4, 5 };
-        var predicates = new Func<int, bool>[] { x => x > 3 };
-
-        var result = source.WhereToList(predicates);
-
-        Assert.That(result, Is.EqualTo(new[] { 4, 5 }));
+            Assert.That(resultYes, Is.EqualTo("Yes"));
+            Assert.That(resultNo, Is.EqualTo("No"));
+        });
     }
 
     [Test]
-    public void WhereToList_List_ReturnsSameList_WhenNoPredicates()
+    public void FormatSenseCheckValue_OtherFormats_UsesDefaultFormatter()
     {
-        var source = new List<int> { 1, 2, 3 };
-        var result = source.WhereToList();
-        Assert.That(result, Is.EqualTo(new[] { 1, 2, 3 }));
+        var result = "".FormatSenseCheckValue(123.45M, RvLCheckFormatType.Currency);
+        Assert.That(result, Does.Contain("123")); // The fallback ToString() from GetValueString
+    }
+
+    [Test]
+    public void FormatSenseCheckValue_Throws_WhenFormattedValueNull()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            StringExtensions.FormatSenseCheckValue(null!, 1M, RvLCheckFormatType.Bool));
+    }
+
+    // ---------------- RemoveDomainFromUserName ----------------
+
+    [Test]
+    public void RemoveDomainFromUserName_RemovesUtilitiesDomain()
+    {
+        var result = "Sam@utilities.local".RemoveDomainFromUserName();
+        Assert.That(result, Is.EqualTo("sam@.local"));
+    }
+
+    [Test]
+    public void RemoveDomainFromUserName_CaseInsensitive()
+    {
+        var result = "TEST@UTILITIES.COM".RemoveDomainFromUserName();
+        Assert.That(result, Is.EqualTo("test@.com"));
+    }
+
+    [Test]
+    public void RemoveDomainFromUserName_ReturnsOriginal_WhenNoDomain()
+    {
+        var result = "user".RemoveDomainFromUserName();
+        Assert.That(result, Is.EqualTo("user"));
+    }
+
+    // ---------------- RenderCamelCaseWithSpacesInserted ----------------
+
+    [Test]
+    public void RenderCamelCaseWithSpacesInserted_AddsSpacesBeforeUppercase()
+    {
+        var result = "CamelCaseString".RenderCamelCaseWithSpacesInserted();
+        Assert.That(result, Is.EqualTo("Camel Case String"));
+    }
+
+    [Test]
+    public void RenderCamelCaseWithSpacesInserted_ReturnsTrimmedString()
+    {
+        var result = "  LeadingSpace  ".RenderCamelCaseWithSpacesInserted();
+        Assert.That(result, Is.EqualTo("Leading Space"));
+    }
+
+    [Test]
+    public void RenderCamelCaseWithSpacesInserted_NoUppercase_ReturnsOriginal()
+    {
+        var result = "lowercase".RenderCamelCaseWithSpacesInserted();
+        Assert.That(result, Is.EqualTo("lowercase"));
     }
 }
