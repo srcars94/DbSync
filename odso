@@ -1,0 +1,69 @@
+using System.Globalization;
+using NUnit.Framework;
+using Quoting.UI.Shared.Extensions; // namespace where DecimalExtensions lives
+
+[TestFixture]
+public class DecimalExtensionsTests
+{
+    private CultureInfo? _originalCulture;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
+        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        CultureInfo.CurrentCulture = _originalCulture!;
+        CultureInfo.CurrentUICulture = _originalCulture!;
+    }
+
+    // --- AsMoney ---
+
+    [TestCase(0,            ExpectedResult = "")]
+    [TestCase(12,           ExpectedResult = "12.00")]
+    [TestCase(12.3,         ExpectedResult = "12.30")]
+    [TestCase(1234.5,       ExpectedResult = "1,234.50")]
+    [TestCase(-1234.567,    ExpectedResult = "-1,234.57")]
+    [TestCase(1000000,      ExpectedResult = "1,000,000.00")]
+    public string AsMoney_formats_expected(decimal input) => input.AsMoney();
+
+    // --- AsMoneyNoDash ---
+
+    // NOTE: your code uses the literal string "&pound;" (not the £ symbol).
+    [TestCase(0,            ExpectedResult = "&pound;0.00")]
+    [TestCase(12.3,         ExpectedResult = "&pound;12.30")]
+    [TestCase(1234.5,       ExpectedResult = "&pound;1,234.50")]
+    [TestCase(-1234.5,      ExpectedResult = "-&pound;1,234.50")]
+    public string AsMoneyNoDash_formats_expected(decimal input) => input.AsMoneyNoDash();
+
+    // --- AsMoneyNoDashDelta ---
+
+    [TestCase(0,            ExpectedResult = "&pound;0.00")]
+    [TestCase(42.01,        ExpectedResult = "&pound;42.01")]
+    [TestCase(-42.01,       ExpectedResult = "-&pound;42.01")]
+    public string AsMoneyNoDashDelta_formats_expected(decimal input) => input.AsMoneyNoDashDelta();
+
+    // --- ToTwoPlaces ---
+
+    [TestCase(0,            ExpectedResult = "0.00")]
+    [TestCase(12,           ExpectedResult = "12.00")]
+    [TestCase(12.3,         ExpectedResult = "12.30")]
+    [TestCase(1234.567m,    ExpectedResult = "1,234.57")]
+    [TestCase(-12.34,       ExpectedResult = "-12.34")]
+    public string ToTwoPlaces_formats_expected(decimal input) => input.ToTwoPlaces();
+
+    // --- ToTwoPlacesPercent ---
+
+    // Method: (original / 100m).ToString("#,##0.00%")
+    // So 12  -> "12.00%"   (-7.5 -> "-7.50%"),  1234.567 -> "1,234.57%"
+    [TestCase(0,            ExpectedResult = "0.00%")]
+    [TestCase(12,           ExpectedResult = "12.00%")]
+    [TestCase(-7.5,         ExpectedResult = "-7.50%")]
+    [TestCase(1234.567,     ExpectedResult = "1,234.57%")]
+    public string ToTwoPlacesPercent_formats_expected(decimal input) => input.ToTwoPlacesPercent();
+}
