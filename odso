@@ -1,140 +1,121 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // Namespace where your StringExtensions.cs is
+using Quoting.UI.Shared.Extensions; // namespace where UnitConversion.cs lives
 
 [TestFixture]
-public class StringExtensionsTests
+public class UnitConversionTests
 {
-    // ---------------- TrimStartSafe ----------------
+    // Constants from your code
+    private const decimal Factor_SCMH_to_KWh = 35.31m * 1038m / 3412m;
+    private const decimal Factor_KWh_to_SCMH = 3412m / (35.31m * 1038m);
+
+    // ------------- ConvertSCMHToKwh (decimal) -------------
 
     [Test]
-    public void TrimStartSafe_ReturnsEmpty_WhenNullOrWhitespace()
+    public void ConvertSCMHToKwh_WithDecimal_ReturnsExpectedResult()
     {
-        Assert.That(((string)null!).TrimStartSafe(), Is.EqualTo(string.Empty));
-        Assert.That("   ".TrimStartSafe(), Is.EqualTo(string.Empty));
+        const decimal input = 10m;
+        var expected = input * Factor_SCMH_to_KWh;
+
+        var result = input.ConvertSCMHToKwh();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
+    }
+
+    // ------------- ConvertSCMHToKwh (nullable decimal) -------------
+
+    [Test]
+    public void ConvertSCMHToKwh_WithNullableDecimal_ReturnsExpectedResult()
+    {
+        decimal? input = 5m;
+        var expected = input.Value * Factor_SCMH_to_KWh;
+
+        var result = input.ConvertSCMHToKwh();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
     [Test]
-    public void TrimStartSafe_TrimsSpecifiedCharacters()
+    public void ConvertSCMHToKwh_WithNullNullable_ReturnsZero()
     {
-        var result = "--Hello".TrimStartSafe('-');
-        Assert.That(result, Is.EqualTo("Hello"));
+        decimal? input = null;
+
+        var result = input.ConvertSCMHToKwh();
+
+        Assert.That(result, Is.EqualTo(0m));
+    }
+
+    // ------------- ConvertSCMHToKwh (int) -------------
+
+    [Test]
+    public void ConvertSCMHToKwh_WithInt_ReturnsExpectedResult()
+    {
+        const int input = 12;
+        var expected = input * Factor_SCMH_to_KWh;
+
+        var result = input.ConvertSCMHToKwh();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
+    }
+
+    // ------------- ConvertKWhToSCMH (decimal) -------------
+
+    [Test]
+    public void ConvertKWhToSCMH_WithDecimal_ReturnsExpectedResult()
+    {
+        const decimal input = 100m;
+        var expected = input * Factor_KWh_to_SCMH;
+
+        var result = input.ConvertKWhToSCMH();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
+    }
+
+    // ------------- ConvertKWhToSCMH (nullable decimal) -------------
+
+    [Test]
+    public void ConvertKWhToSCMH_WithNullableDecimal_ReturnsExpectedResult()
+    {
+        decimal? input = 50m;
+        var expected = input.Value * Factor_KWh_to_SCMH;
+
+        var result = input.ConvertKWhToSCMH();
+
+        Assert.That(result, Is.EqualTo(expected).Within(0.0001m));
     }
 
     [Test]
-    public void TrimStartSafe_ReturnsOriginal_WhenNoTrimChars()
+    public void ConvertKWhToSCMH_WithNullNullable_ReturnsZero()
     {
-        var result = "Hello".TrimStartSafe();
-        Assert.That(result, Is.EqualTo("Hello"));
+        decimal? input = null;
+
+        var result = input.ConvertKWhToSCMH();
+
+        Assert.That(result, Is.EqualTo(0m));
     }
 
-    // ---------------- JoinString ----------------
+    // ------------- ConvertKwToKwh -------------
 
     [Test]
-    public void JoinString_ReturnsEmpty_WhenListIsNullOrEmpty()
+    public void ConvertKwToKwh_AppliesEfficiencyFactor()
     {
-        IEnumerable<string> nullList = null!;
-        Assert.That(nullList.JoinString(","), Is.EqualTo(string.Empty));
-        Assert.That(new List<string>().JoinString(","), Is.EqualTo(string.Empty));
+        const decimal input = 100m;
+        var expected = input * 0.95m;
+
+        var result = input.ConvertKwToKwh();
+
+        Assert.That(result, Is.EqualTo(expected));
     }
 
-    [Test]
-    public void JoinString_JoinsValuesWithSeparator()
-    {
-        var list = new[] { "A", "B", "C" };
-        var result = list.JoinString("-");
-        Assert.That(result, Is.EqualTo("A-B-C"));
-    }
-
-    // ---------------- FormatSenseCheckValue ----------------
-
-    public enum RvLCheckFormatType { YesNo, Bool, Currency }
+    // ------------- Integration sanity check -------------
 
     [Test]
-    public void FormatSenseCheckValue_YesNo_ReturnsYesOrNo()
+    public void RoundTrip_SCMH_To_KWh_And_Back_RestoresValue_WithinTolerance()
     {
-        var resultYes = "".FormatSenseCheckValue(1M, RvLCheckFormatType.YesNo);
-        var resultNo = "".FormatSenseCheckValue(0M, RvLCheckFormatType.YesNo);
+        const decimal scmh = 10m;
 
-        Assert.Multiple(() =>
-        {
-            Assert.That(resultYes, Is.EqualTo("Yes"));
-            Assert.That(resultNo, Is.EqualTo("No"));
-        });
-    }
+        var kwh = scmh.ConvertSCMHToKwh();
+        var scmhBack = kwh.ConvertKWhToSCMH();
 
-    [Test]
-    public void FormatSenseCheckValue_Bool_ReturnsYesOrNo()
-    {
-        var resultYes = "".FormatSenseCheckValue(1M, RvLCheckFormatType.Bool);
-        var resultNo = "".FormatSenseCheckValue(0M, RvLCheckFormatType.Bool);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(resultYes, Is.EqualTo("Yes"));
-            Assert.That(resultNo, Is.EqualTo("No"));
-        });
-    }
-
-    [Test]
-    public void FormatSenseCheckValue_OtherFormats_UsesDefaultFormatter()
-    {
-        var result = "".FormatSenseCheckValue(123.45M, RvLCheckFormatType.Currency);
-        Assert.That(result, Does.Contain("123")); // The fallback ToString() from GetValueString
-    }
-
-    [Test]
-    public void FormatSenseCheckValue_Throws_WhenFormattedValueNull()
-    {
-        Assert.Throws<ArgumentNullException>(() =>
-            StringExtensions.FormatSenseCheckValue(null!, 1M, RvLCheckFormatType.Bool));
-    }
-
-    // ---------------- RemoveDomainFromUserName ----------------
-
-    [Test]
-    public void RemoveDomainFromUserName_RemovesUtilitiesDomain()
-    {
-        var result = "Sam@utilities.local".RemoveDomainFromUserName();
-        Assert.That(result, Is.EqualTo("sam@.local"));
-    }
-
-    [Test]
-    public void RemoveDomainFromUserName_CaseInsensitive()
-    {
-        var result = "TEST@UTILITIES.COM".RemoveDomainFromUserName();
-        Assert.That(result, Is.EqualTo("test@.com"));
-    }
-
-    [Test]
-    public void RemoveDomainFromUserName_ReturnsOriginal_WhenNoDomain()
-    {
-        var result = "user".RemoveDomainFromUserName();
-        Assert.That(result, Is.EqualTo("user"));
-    }
-
-    // ---------------- RenderCamelCaseWithSpacesInserted ----------------
-
-    [Test]
-    public void RenderCamelCaseWithSpacesInserted_AddsSpacesBeforeUppercase()
-    {
-        var result = "CamelCaseString".RenderCamelCaseWithSpacesInserted();
-        Assert.That(result, Is.EqualTo("Camel Case String"));
-    }
-
-    [Test]
-    public void RenderCamelCaseWithSpacesInserted_ReturnsTrimmedString()
-    {
-        var result = "  LeadingSpace  ".RenderCamelCaseWithSpacesInserted();
-        Assert.That(result, Is.EqualTo("Leading Space"));
-    }
-
-    [Test]
-    public void RenderCamelCaseWithSpacesInserted_NoUppercase_ReturnsOriginal()
-    {
-        var result = "lowercase".RenderCamelCaseWithSpacesInserted();
-        Assert.That(result, Is.EqualTo("lowercase"));
+        Assert.That(scmhBack, Is.EqualTo(scmh).Within(0.0001m));
     }
 }
