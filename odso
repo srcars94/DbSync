@@ -1,84 +1,143 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.AspNetCore.Html;
-using Microsoft.AspNetCore.Mvc.Rendering;
+using System.Threading.Tasks;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // namespace where HtmlExtensions.cs lives
+using Quoting.UI.Shared.Extensions; // Namespace for LinqExtensions.cs
 
 [TestFixture]
-public class HtmlExtensionsTests
+public class LinqExtensionsTests
 {
-    private class TestModel
-    {
-        public IEnumerable<string> SelectedItems { get; set; } = Enumerable.Empty<string>();
-    }
+    // ---------------- SafeAny (with predicate) ----------------
 
-    private HtmlHelper<TestModel> CreateHtmlHelper()
+    [Test]
+    public void SafeAny_WithPredicate_ReturnsFalse_WhenSourceNull()
     {
-        // Fake IHtmlHelper instance using the default ViewContext constructor pattern
-        var viewContext = new Microsoft.AspNetCore.Mvc.Rendering.ViewContext();
-        var helper = new HtmlHelper<TestModel>(
-            new Microsoft.AspNetCore.Mvc.ViewFeatures.Internal.DefaultHtmlGenerator(),
-            new Microsoft.AspNetCore.Mvc.ViewEngines.Internal.DefaultViewEngine(),
-            new Microsoft.AspNetCore.Mvc.ModelBinding.ModelMetadataProvider(),
-            new Microsoft.AspNetCore.Mvc.ViewFeatures.HtmlHelperOptions(),
-            viewContext
-        );
-        return helper;
+        IEnumerable<int> source = null!;
+        var result = source.SafeAny(x => x > 0);
+        Assert.That(result, Is.False);
     }
 
     [Test]
-    public void CheckBoxListFor_GeneratesExpectedHtml()
+    public void SafeAny_WithPredicate_ReturnsFalse_WhenEmpty()
     {
-        // Arrange
-        var model = new TestModel { SelectedItems = new[] { "2" } };
-
-        var items = new List<SelectListItem>
-        {
-            new SelectListItem { Text = "Option 1", Value = "1" },
-            new SelectListItem { Text = "Option 2", Value = "2", Selected = true }
-        };
-
-        var htmlHelper = new FakeHtmlHelper<TestModel>(model);
-
-        // Act
-        var html = HtmlExtensions.CheckBoxListFor(
-            htmlHelper,
-            m => m.SelectedItems,
-            items,
-            new { @class = "custom", data_test = "abc" });
-
-        var result = html.ToString();
-
-        // Assert
-        Assert.That(result, Does.Contain("type=\"checkbox\""));
-        Assert.That(result, Does.Contain("name=\"SelectedItems\""));
-        Assert.That(result, Does.Contain("value=\"1\""));
-        Assert.That(result, Does.Contain("value=\"2\""));
-        Assert.That(result, Does.Contain("checked=\"checked\""));
-        Assert.That(result, Does.Contain("class=\"custom\""));
-        Assert.That(result, Does.Contain("data_test=\"abc\""));
+        var source = Enumerable.Empty<int>();
+        var result = source.SafeAny(x => x > 0);
+        Assert.That(result, Is.False);
     }
 
-    // Simple stub to satisfy IHtmlHelper interface so we don’t need full MVC context
-    private class FakeHtmlHelper<T> : IHtmlHelper<T>
+    [Test]
+    public void SafeAny_WithPredicate_ReturnsTrue_WhenMatchExists()
     {
-        public FakeHtmlHelper(T model) { ViewData = new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary<T>(new Microsoft.AspNetCore.Mvc.ModelBinding.EmptyModelMetadataProvider(), new Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary()) { Model = model }; }
-        public Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary<T> ViewData { get; set; }
-        object IHtmlHelper.ViewData => ViewData;
-        public dynamic ViewBag => new System.Dynamic.ExpandoObject();
-        public Microsoft.AspNetCore.Mvc.Rendering.ViewContext ViewContext => new Microsoft.AspNetCore.Mvc.Rendering.ViewContext();
-        public Microsoft.AspNetCore.Mvc.Rendering.IHtmlGenerator HtmlGenerator => throw new System.NotImplementedException();
-        public string IdAttributeDotReplacement => "_";
-        public ITempDataDictionary TempData => new Microsoft.AspNetCore.Mvc.ViewFeatures.Internal.TempDataDictionary();
-        public UrlEncoder UrlEncoder => System.Text.Encodings.Web.HtmlEncoder.Default;
-        public IHtmlContent Partial(string partialViewName, object model, Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary viewData) => throw new System.NotImplementedException();
-        public IHtmlContent Raw(string value) => new HtmlString(value);
-        public void Contextualize(ViewContext viewContext) { }
-        public string Encode(string value) => value;
-        public string Encode(object value) => value?.ToString();
-        public string FormatValue(object value, string format) => value?.ToString() ?? "";
-        public string Value(string name, string format) => "";
-        public void EndForm() { }
+        var source = new[] { 1, 2, 3 };
+        var result = source.SafeAny(x => x > 2);
+        Assert.That(result, Is.True);
+    }
+
+    // ---------------- SafeAny (no predicate) ----------------
+
+    [Test]
+    public void SafeAny_WithoutPredicate_ReturnsFalse_WhenSourceNull()
+    {
+        IEnumerable<int> source = null!;
+        var result = source.SafeAny();
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void SafeAny_WithoutPredicate_ReturnsTrue_WhenNotEmpty()
+    {
+        var source = new[] { 1 };
+        var result = source.SafeAny();
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void SafeAny_WithoutPredicate_ReturnsFalse_WhenEmpty()
+    {
+        var source = Enumerable.Empty<string>();
+        var result = source.SafeAny();
+        Assert.That(result, Is.False);
+    }
+
+    // ---------------- WhereToList (IEnumerable<T>) ----------------
+
+    [Test]
+    public async Task WhereToList_IEnumerable_ReturnsFilteredList()
+    {
+        var source = new[] { 1, 2, 3, 4, 5 };
+        var predicates = new Func<int, bool>[]
+        {
+            x => x > 2,
+            x => x % 2 == 1
+        };
+
+        var result = await source.WhereToList(predicates);
+
+        Assert.That(result, Is.EqualTo(new[] { 3, 5 }));
+    }
+
+    // ---------------- WhereToList (IQueryable<T>) ----------------
+
+    [Test]
+    public async Task WhereToList_IQueryable_ReturnsFilteredList()
+    {
+        var source = new List<int> { 1, 2, 3, 4, 5 }.AsQueryable();
+        var predicates = new System.Linq.Expressions.Expression<Func<int, bool>>[]
+        {
+            x => x > 2,
+            x => x < 5
+        };
+
+        var result = await source.WhereToList(predicates);
+
+        Assert.That(result, Is.EqualTo(new[] { 3, 4 }));
+    }
+
+    // ---------------- WhereToList (Task<IEnumerable<T>>) ----------------
+
+    [Test]
+    public async Task WhereToList_TaskOfIEnumerable_ReturnsFilteredList()
+    {
+        Task<IEnumerable<int>> task = Task.FromResult<IEnumerable<int>>(new[] { 1, 2, 3, 4 });
+        var predicates = new Func<int, bool>[] { x => x > 1, x => x < 4 };
+
+        var result = await task.WhereToList(predicates);
+
+        Assert.That(result, Is.EqualTo(new[] { 2, 3 }));
+    }
+
+    // ---------------- WhereToList (Task<List<T>>) ----------------
+
+    [Test]
+    public async Task WhereToList_TaskOfList_ReturnsFilteredList()
+    {
+        Task<List<int>> task = Task.FromResult(new List<int> { 1, 2, 3, 4 });
+        var predicates = new Func<int, bool>[] { x => x % 2 == 0 };
+
+        var result = await task.WhereToList(predicates);
+
+        Assert.That(result, Is.EqualTo(new[] { 2, 4 }));
+    }
+
+    // ---------------- WhereToList (List<T>) ----------------
+
+    [Test]
+    public void WhereToList_List_ReturnsFilteredList()
+    {
+        var source = new List<int> { 1, 2, 3, 4, 5 };
+        var predicates = new Func<int, bool>[] { x => x > 3 };
+
+        var result = source.WhereToList(predicates);
+
+        Assert.That(result, Is.EqualTo(new[] { 4, 5 }));
+    }
+
+    [Test]
+    public void WhereToList_List_ReturnsSameList_WhenNoPredicates()
+    {
+        var source = new List<int> { 1, 2, 3 };
+        var result = source.WhereToList();
+        Assert.That(result, Is.EqualTo(new[] { 1, 2, 3 }));
     }
 }
