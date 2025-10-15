@@ -1,69 +1,122 @@
-using System.Globalization;
+using System;
+using System.Collections.Generic;
 using NUnit.Framework;
-using Quoting.UI.Shared.Extensions; // namespace where DecimalExtensions lives
+using Quoting.UI.Shared.Extensions; // where DictionaryExtensions lives
 
 [TestFixture]
-public class DecimalExtensionsTests
+public class DictionaryExtensionsTests
 {
-    private CultureInfo? _originalCulture;
+    // --- Overload: defaultValue (constant) ---
 
-    [OneTimeSetUp]
-    public void OneTimeSetUp()
+    [Test]
+    public void GetValueOrDefaultCustom_ReturnsExistingValue_WhenKeyPresent()
     {
-        _originalCulture = CultureInfo.CurrentCulture;
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
+        var dict = new Dictionary<string, int> { ["a"] = 42 };
+
+        var result = dict.GetValueOrDefaultCustom("a", -1);
+
+        Assert.That(result, Is.EqualTo(42));
     }
 
-    [OneTimeTearDown]
-    public void OneTimeTearDown()
+    [Test]
+    public void GetValueOrDefaultCustom_ReturnsDefault_WhenKeyMissing()
     {
-        CultureInfo.CurrentCulture = _originalCulture!;
-        CultureInfo.CurrentUICulture = _originalCulture!;
+        var dict = new Dictionary<string, int> { ["a"] = 42 };
+
+        var result = dict.GetValueOrDefaultCustom("missing", -1);
+
+        Assert.That(result, Is.EqualTo(-1));
     }
 
-    // --- AsMoney ---
+    // --- Overload: defaultValueSelector (Func<TValue>) ---
 
-    [TestCase(0,            ExpectedResult = "")]
-    [TestCase(12,           ExpectedResult = "12.00")]
-    [TestCase(12.3,         ExpectedResult = "12.30")]
-    [TestCase(1234.5,       ExpectedResult = "1,234.50")]
-    [TestCase(-1234.567,    ExpectedResult = "-1,234.57")]
-    [TestCase(1000000,      ExpectedResult = "1,000,000.00")]
-    public string AsMoney_formats_expected(decimal input) => input.AsMoney();
+    [Test]
+    public void GetValueOrDefaultCustom_SelectorUsed_WhenKeyMissing()
+    {
+        var dict = new Dictionary<string, string> { ["k"] = "v" };
+        var selectorCalls = 0;
 
-    // --- AsMoneyNoDash ---
+        string result = dict.GetValueOrDefaultCustom("missing", () =>
+        {
+            selectorCalls++;
+            return "computed";
+        });
 
-    // NOTE: your code uses the literal string "&pound;" (not the £ symbol).
-    [TestCase(0,            ExpectedResult = "&pound;0.00")]
-    [TestCase(12.3,         ExpectedResult = "&pound;12.30")]
-    [TestCase(1234.5,       ExpectedResult = "&pound;1,234.50")]
-    [TestCase(-1234.5,      ExpectedResult = "-&pound;1,234.50")]
-    public string AsMoneyNoDash_formats_expected(decimal input) => input.AsMoneyNoDash();
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo("computed"));
+            Assert.That(selectorCalls, Is.EqualTo(1), "Selector should be invoked exactly once.");
+        });
+    }
 
-    // --- AsMoneyNoDashDelta ---
+    [Test]
+    public void GetValueOrDefaultCustom_SelectorNotInvoked_WhenKeyPresent()
+    {
+        var dict = new Dictionary<string, string> { ["k"] = "v" };
+        var selectorCalls = 0;
 
-    [TestCase(0,            ExpectedResult = "&pound;0.00")]
-    [TestCase(42.01,        ExpectedResult = "&pound;42.01")]
-    [TestCase(-42.01,       ExpectedResult = "-&pound;42.01")]
-    public string AsMoneyNoDashDelta_formats_expected(decimal input) => input.AsMoneyNoDashDelta();
+        string result = dict.GetValueOrDefaultCustom("k", () =>
+        {
+            selectorCalls++;
+            return "should-not-run";
+        });
 
-    // --- ToTwoPlaces ---
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo("v"));
+            Assert.That(selectorCalls, Is.EqualTo(0), "Selector must not run if key exists.");
+        });
+    }
 
-    [TestCase(0,            ExpectedResult = "0.00")]
-    [TestCase(12,           ExpectedResult = "12.00")]
-    [TestCase(12.3,         ExpectedResult = "12.30")]
-    [TestCase(1234.567m,    ExpectedResult = "1,234.57")]
-    [TestCase(-12.34,       ExpectedResult = "-12.34")]
-    public string ToTwoPlaces_formats_expected(decimal input) => input.ToTwoPlaces();
+    // --- Null-guarding ---
 
-    // --- ToTwoPlacesPercent ---
+    [Test]
+    public void GetValueOrDefaultCustom_Throws_WhenDictionaryNull_ConstantOverload()
+    {
+        IDictionary<string, int> dict = null!;
 
-    // Method: (original / 100m).ToString("#,##0.00%")
-    // So 12  -> "12.00%"   (-7.5 -> "-7.50%"),  1234.567 -> "1,234.57%"
-    [TestCase(0,            ExpectedResult = "0.00%")]
-    [TestCase(12,           ExpectedResult = "12.00%")]
-    [TestCase(-7.5,         ExpectedResult = "-7.50%")]
-    [TestCase(1234.567,     ExpectedResult = "1,234.57%")]
-    public string ToTwoPlacesPercent_formats_expected(decimal input) => input.ToTwoPlacesPercent();
+        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom("a", 0));
+        Assert.That(ex!.ParamName, Is.EqualTo("dictionary"));
+    }
+
+    [Test]
+    public void GetValueOrDefaultCustom_Throws_WhenDictionaryNull_SelectorOverload()
+    {
+        IDictionary<string, int> dict = null!;
+
+        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom("a", () => 0));
+        Assert.That(ex!.ParamName, Is.EqualTo("dictionary"));
+    }
+
+    [Test]
+    public void GetValueOrDefaultCustom_Throws_WhenKeyNull_ConstantOverload()
+    {
+        var dict = new Dictionary<string, int>();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom(null!, 0));
+        Assert.That(ex!.ParamName, Is.EqualTo("key"));
+    }
+
+    [Test]
+    public void GetValueOrDefaultCustom_Throws_WhenKeyNull_SelectorOverload()
+    {
+        var dict = new Dictionary<string, int>();
+
+        var ex = Assert.Throws<ArgumentNullException>(() => dict.GetValueOrDefaultCustom(null!, () => 0));
+        Assert.That(ex!.ParamName, Is.EqualTo("key"));
+    }
+
+    // --- Reference type value (sanity) ---
+
+    private sealed class Foo { public int Id { get; init; } }
+
+    [Test]
+    public void GetValueOrDefaultCustom_ReferenceType_DefaultReturnedWhenMissing()
+    {
+        var dict = new Dictionary<int, Foo> { [1] = new Foo { Id = 1 } };
+
+        var result = dict.GetValueOrDefaultCustom(2, new Foo { Id = -1 });
+
+        Assert.That(result.Id, Is.EqualTo(-1));
+    }
 }
