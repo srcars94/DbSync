@@ -1,6 +1,0 @@
-# Deploy the reference (BusinessPortalsAcceptence) first
-& "$sqlPackagePath" /Action:Publish `
-    /SourceFile:"$scriptDir\BusinessPortalsAcceptence\bin\Debug\BusinessPortalsAcceptence.dacpac" `
-    /TargetConnectionString:"Server=localhost;Database=BusinessPortalsAcceptence;Trusted_Connection=True;" `
-    /p:BlockOnPossibleDataLoss=false `
-    /p:DropObjectsNotInSource=false
