@@ -1,101 +1,87 @@
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Moq;
 using NUnit.Framework;
-using Quoting.UI.Infrastructure.Authentication.Cache;
+using Quoting.UI.Infrastructure.Authentication.InitialAuthentication;
 
-namespace Quoting.UI.Infrastructure.Authentication.Cache.Tests
+namespace Quoting.UI.Infrastructure.Authentication.InitialAuthentication.Tests
 {
-    public interface IMemoryCacheProvider
-    {
-        object Get(string key);
-        void Set(string key, object value, int minutesToLive);
-    }
-
-    public interface ISecurityTokenServiceClient
+    // Minimal interface stubs (remove if you reference the real ones)
+    public interface ISecurityTokenCache
     {
         Task<Dictionary<string, string>> GetToken(string userName, string applicationName);
     }
 
-    [TestFixture]
-    public class SecurityTokenCacheTests
+    public interface IGetUserNameHelper
     {
-        private Mock<IMemoryCacheProvider> _cache;
-        private Mock<ISecurityTokenServiceClient> _client;
-        private SecurityTokenCache _sut;
+        string GetUserNameFromContext();
+    }
 
-        private const string User = "sam.carslake";
-        private const string App  = "QuotingUI";
-        private const string KeyPrefix = "QuotingUi:Security:Token:";
+    public interface IHttpClientHeaderSetup
+    {
+        void AssignHeader(string key, string value);
+    }
+
+    [TestFixture]
+    public class UserAuthenticationTests
+    {
+        private Mock<ISecurityTokenCache> _cache;
+        private Mock<IGetUserNameHelper> _userHelper;
+        private Mock<IHttpClientHeaderSetup> _headerSetup;
+
+        private UserAuthentication _sut;
 
         [SetUp]
         public void SetUp()
         {
-            _cache = new Mock<IMemoryCacheProvider>(MockBehavior.Strict);
-            _client = new Mock<ISecurityTokenServiceClient>(MockBehavior.Strict);
-            _sut = new SecurityTokenCache(_cache.Object, _client.Object);
+            _cache = new Mock<ISecurityTokenCache>(MockBehavior.Strict);
+            _userHelper = new Mock<IGetUserNameHelper>(MockBehavior.Strict);
+            _headerSetup = new Mock<IHttpClientHeaderSetup>(MockBehavior.Strict);
+
+            _sut = new UserAuthentication(_cache.Object, _userHelper.Object, _headerSetup.Object);
         }
 
         [Test]
-        public async Task GetToken_WhenInCache_ReturnsCached_AndSkipsClient()
+        public async Task GetInitialHeadersOnLoadForCaching_SetsAllReturnedHeaders()
         {
-            var key = KeyPrefix + User;
-            var cached = new Dictionary<string, string> { ["access_token"] = "CACHED", ["expires_in"] = "900" };
+            const string username = "sam.carslake";
+            const string app = "quoting";
+            var headers = new Dictionary<string, string>
+            {
+                ["Authorization"] = "Bearer abc123",
+                ["x-client-id"] = "QuotingUI"
+            };
 
-            _cache.Setup(c => c.Get(key)).Returns(cached);
+            _userHelper.Setup(h => h.GetUserNameFromContext()).Returns(username);
+            _cache.Setup(c => c.GetToken(username, app)).ReturnsAsync(headers);
 
-            var result = await _sut.GetToken(User, App);
+            _headerSetup.Setup(h => h.AssignHeader("Authorization", "Bearer abc123"));
+            _headerSetup.Setup(h => h.AssignHeader("x-client-id", "QuotingUI"));
 
-            Assert.That(result, Is.SameAs(cached)); // exact instance
-            _client.Verify(x => x.GetToken(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-            _cache.Verify(c => c.Get(key), Times.Once);
-            _cache.VerifyNoOtherCalls();
+            await _sut.GetInitialHeadersOnLoadForCaching();
+
+            _userHelper.Verify(h => h.GetUserNameFromContext(), Times.Once);
+            _cache.Verify(c => c.GetToken(username, app), Times.Once);
+            _headerSetup.Verify(h => h.AssignHeader("Authorization", "Bearer abc123"), Times.Once);
+            _headerSetup.Verify(h => h.AssignHeader("x-client-id", "QuotingUI"), Times.Once);
+            _headerSetup.VerifyNoOtherCalls();
         }
 
         [Test]
-        public async Task GetToken_WhenNotInCache_Fetches_SetsCache_For15Minutes_AndReturns()
+        public async Task GetInitialHeadersOnLoadForCaching_NoHeaders_DoesNotAssign()
         {
-            var key = KeyPrefix + User;
-            var fetched = new Dictionary<string, string> { ["access_token"] = "LIVE", ["expires_in"] = "900" };
+            const string username = "sam.carslake";
+            const string app = "quoting";
+            var headers = new Dictionary<string, string>(); // empty
 
-            _cache.Setup(c => c.Get(key)).Returns(null!);
-            _client.Setup(x => x.GetToken(User, App)).ReturnsAsync(fetched);
+            _userHelper.Setup(h => h.GetUserNameFromContext()).Returns(username);
+            _cache.Setup(c => c.GetToken(username, app)).ReturnsAsync(headers);
 
-            // capture Set call
-            _cache.Setup(c => c.Set(
-                It.Is<string>(k => k == key),
-                It.Is<object>(v => ReferenceEquals(v, fetched)),
-                It.Is<int>(mins => mins == 15)));
+            await _sut.GetInitialHeadersOnLoadForCaching();
 
-            var result = await _sut.GetToken(User, App);
-
-            Assert.That(result, Is.SameAs(fetched));
-            _cache.Verify(c => c.Get(key), Times.Once);
-            _client.Verify(x => x.GetToken(User, App), Times.Once);
-            _cache.Verify(c => c.Set(key, fetched, 15), Times.Once);
-            _cache.VerifyNoOtherCalls();
-            _client.VerifyNoOtherCalls();
-        }
-
-        [Test]
-        public async Task GetToken_WhenRemoteReturnsNull_ReturnsEmptyDictionary_AndDoesNotCache()
-        {
-            var key = KeyPrefix + User;
-
-            _cache.Setup(c => c.Get(key)).Returns(null!);
-            _client.Setup(x => x.GetToken(User, App)).ReturnsAsync((Dictionary<string, string>)null!);
-
-            var result = await _sut.GetToken(User, App);
-
-            Assert.That(result, Is.Not.Null);
-            Assert.That(result, Is.Empty);
-
-            _cache.Verify(c => c.Get(key), Times.Once);
-            _client.Verify(x => x.GetToken(User, App), Times.Once);
-            _cache.Verify(c => c.Set(It.IsAny<string>(), It.IsAny<object>(), It.IsAny<int>()), Times.Never);
-            _cache.VerifyNoOtherCalls();
-            _client.VerifyNoOtherCalls();
+            _userHelper.Verify(h => h.GetUserNameFromContext(), Times.Once);
+            _cache.Verify(c => c.GetToken(username, app), Times.Once);
+            _headerSetup.Verify(h => h.AssignHeader(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
     }
 }
