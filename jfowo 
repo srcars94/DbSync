@@ -1,32 +1,18 @@
-// --- Namespace bootstrap (runs first) ---
-(function (w) {
-  // Root objects
-  const BP = (w.BusinessPortals = w.BusinessPortals || {});
-  w.businessPortals = w.businessPortals || BP; // lowercase alias some old code uses
+$dac = "C:\Program Files\Microsoft SQL Server\170\DAC\bin"
+if (-not (Test-Path $dac)) { throw "DacFx path not found: $dac" }
 
-  function makeNS(path) {
-    if (!path) return BP;
-    return path.split('.').reduce((obj, key) => (obj[key] = obj[key] || {}), w);
-  }
+# Add to current session PATH
+$env:Path = "$dac;$env:Path"
 
-  // Support BOTH spellings used across the codebase
-  BP.createNamespace = BP.createNamespace || makeNS;
-  BP.CreateNamespace = BP.CreateNamespace || makeNS;
+# Persist for your user
+$old = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($old -notlike "*$dac*") {
+  [Environment]::SetEnvironmentVariable("Path", "$dac;$old", "User")
+  "Added to user PATH: $dac"
+} else {
+  "Already on user PATH."
+}
 
-  // Pre-create common trees (optional)
-  makeNS('BusinessPortals');
-  makeNS('BusinessPortals.Quoting');
-  makeNS('BusinessPortals.Quoting.UI');
-  makeNS('BusinessPortals.Quoting.UI.Master');
-  makeNS('BusinessPortals.Quoting.UI.Master.Areas');
-  makeNS('BusinessPortals.Utility');
-  makeNS('BusinessPortals.Utility.Notify');
-})(window);
-
-// jQuery globals next
-import * as jq from 'jquery';
-const jQ = jq.default || jq;
-window.jQuery = window.$ = window.jquery = jQ;
-
-// Plugins after jQuery globals
-import 'mark.js/dist/jquery.mark.js';
+# Quick verification
+& "$dac\SqlPackage.exe" /? | Out-Null
+"SqlPackage is reachable."
